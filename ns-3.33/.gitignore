@@ -1,0 +1,4 @@
+.waf*/
+build/
+__pycache__/
+examples/
