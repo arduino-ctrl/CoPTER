@@ -225,6 +225,7 @@ OpenGymInterface::NotifyCurrentState()
 
   // collect current env state
   Ptr<OpenGymDataContainer> obsDataContainer = GetObservation();
+  NS_LOG_DEBUG("OpenGymInterface::NotifyCurrentState: obsDataContainer = " << obsDataContainer);
   float reward = GetReward();
   bool isGameOver = IsGameOver();
   std::string extraInfo = GetExtraInfo();
@@ -235,6 +236,7 @@ OpenGymInterface::NotifyCurrentState()
   if (obsDataContainer) {
     obsDataContainerPbMsg = obsDataContainer->GetDataContainerPbMsg();
     envStateMsg.mutable_obsdata()->CopyFrom(obsDataContainerPbMsg);
+    NS_LOG_DEBUG("OpenGymInterface::NotifyCurrentState: obsDataContainerPbMsg ");
   }
   // reward
   envStateMsg.set_reward(reward);

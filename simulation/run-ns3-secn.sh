@@ -11,7 +11,6 @@ mkdir -p output
 # List of configuration files to process
 CONFIG_FILES=(
     "acc_mixed_1_DCQCN_SECN"
-    "acc_mixed_1_HPCC_SECN"
 )
 
 # Check if any config file is missing

@@ -31,14 +31,14 @@ if __name__ == "__main__":
     logger.info(f"Copter Starting Running at {os.getcwd()}")
 
     # Initialize NetworkHelper
-    network_helper_params = NetworkHelperParameters(port_states=6, port_actions=2, state_observations=3, switch_buffer_size=args.switch_buffer)
+    network_helper_params = NetworkHelperParameters(port_states=6, port_actions=3, state_observations=3, switch_buffer_size=args.switch_buffer)
     
     network_helper = NetworkHelper(ns3_socket=args.ns3_socket, nhp=network_helper_params)
     
     agent_helper_params = AgentHelperParameters()
 
     agent_helper = AgentHelper(node_number=network_helper.get_n_port(), ahp=agent_helper_params, model_dir=args.model_dir, mode=args.mode, 
-                               exp_name=args.exp_name, online=args.online, fmap_dir=args.fmap_dir)
+                               exp_name=args.exp_name, online=args.online, network_helper=network_helper, fmap_dir=args.fmap_dir)
     
     agent_helper.load(args.override_name)
 
@@ -73,19 +73,38 @@ if __name__ == "__main__":
 
                 # Enforce the updated parameters
                 network_helper.monitor(current_step)
+            # 步骤1：先执行monitor，确保获取端口标识
+            # done = network_helper.monitor(current_step)
 
-                # Record the states and actions in the agent's replay buffer
-                for port_idx in range(network_helper.get_n_port()):
-                    # Get the current (new) states, (last) states, actions (in dice format), and rewards
-                    current_state = network_helper.get_port_current_state_list(port_idx)
-                    last_state = network_helper.get_port_last_state_list(port_idx)
-                    action = actions[port_idx]
-                    reward = network_helper.get_port_current_reward(port_idx)
-                    # Add the experience to the agent's replay buffer
-                    agent_helper.record(port_idx, last_state, action, reward, current_state)
+            # # 步骤2：仅在标识获取完成后（current_step≥1）执行决策
+            # if current_step >= 1 and network_helper.port_identifier_map:
+            #     # 获取端口状态
+            #     port_states = [
+            #         network_helper.get_port_current_state_list(port_idx)
+            #         for port_idx in range(network_helper.get_n_port())
+            #     ]
+            #     # 调用decide（此时会触发fmap延迟加载）
+            #     paras, actions = agent_helper.decide(port_states, epsi=args.epsilon)
+                
+            #     # 配置动作
+            #     for port_idx, parameter in enumerate(paras):
+            #         network_helper.configurator(current_step, port_idx, parameter)
+
+                # 只有在线模式才记录经验（如果offline模式不需要记录，可添加此判断）
+                if args.online:
+
+                    # Record the states and actions in the agent's replay buffer
+                    for port_idx in range(network_helper.get_n_port()):
+                        # Get the current (new) states, (last) states, actions (in dice format), and rewards
+                        current_state = network_helper.get_port_current_state_list(port_idx)
+                        last_state = network_helper.get_port_last_state_list(port_idx)
+                        action = actions[port_idx]
+                        reward = network_helper.get_port_current_reward(port_idx)
+                        # Add the experience to the agent's replay buffer
+                        agent_helper.record(port_idx, last_state, action, reward, current_state)
 
                 # Train the agent every `train_intervals` steps
-                if current_step % args.train_intervals == 0:
+                if args.online and current_step % args.train_intervals == 0:
                     agent_helper.sync()
                     agent_helper.train(current_step)
                     # Save the agents' model and replay buffers whenever training is done.

@@ -38,6 +38,7 @@
 #include <ns3/switch-node.h>
 #include <ns3/sim-setting.h>
 #include "ns3/opengym-module.h"
+#include <iomanip>  // 用于std::setprecision（确保时间格式正确）
 
 using namespace ns3;
 using namespace std;
@@ -113,6 +114,8 @@ const double opengym_max_kmin = 50000; // 50KB
 const double opengym_min_kmax = 50000; // 50KB
 const double opengym_max_kmax = 100000; // 100KB
 
+std::vector<std::string> port_identifiers; // 存储每个端口的"switch_id-connected_node_id"
+
 
 // Ptr<OpenGymInterface> openGym = CreateObject<OpenGymInterface> (opengym_socket_port);
 // openGym->SetGetActionSpaceCb( MakeCallback (&MyGetActionSpace) );
@@ -124,7 +127,7 @@ const double opengym_max_kmax = 100000; // 100KB
 // openGym->SetExecuteActionsCb( MakeCallback (&MyExecuteActions) );
 // Simulator::Schedule (Seconds(0.0), &ScheduleNextStateRead, opengym_step_time, openGym);
 
-
+// 定义观察空间结构：0.0-1.0范围内的数组（double类型）
 Ptr<OpenGymSpace> MyGetObservationSpace(void) {
     NS_LOG_UNCOND("OpenGym Observation Space = " << opengym_n_ports << " * " << opengym_n_state_per_port << " = " << opengym_n_ports * opengym_n_state_per_port << " values");
     float low = 0.0;
@@ -146,24 +149,67 @@ Ptr<OpenGymSpace> MyGetActionSpace(void) {
 }
 
 bool MyGetGameOver(void) {
+    bool flag = Simulator::Now().GetSeconds() > opengym_end_time;
+    NS_LOG_UNCOND("game over " << Simulator::Now().GetSeconds()<<"---"<<flag);
     return Simulator::Now().GetSeconds() > opengym_end_time;
+    // return Simulator::Now().GetSeconds() > simulator_stop_time;
 }
-
+//获取obs
 Ptr<OpenGymDataContainer> MyGetObservation(void) {
+
+    port_identifiers.clear(); // 每次观测前清空
 
     std::vector<uint32_t> shape = {opengym_n_ports * 6};
     Ptr<OpenGymBoxContainer<double>> box = CreateObject<OpenGymBoxContainer<double> >(shape);
-
-
+    // 遍历所有交换机
     for (uint32_t i = 0; i < opengym_n_switches; i++ ) {
         Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(opengym_switches_pool.Get(i));
+        uint32_t switch_id = sw->GetId();  // 获取当前交换机的ID
         uint32_t switch_buffer_bytes = sw->m_mmu->buffer_size;
+        NS_LOG_DEBUG("交换机 " << switch_id << " 的缓冲区大小: " << switch_buffer_bytes << " bytes");
+        //遍历交换机的所有端口
         for (uint32_t j = 1; j < sw->GetNDevices(); j++) {
+            // 获取当前端口连接的节点ID
+            Ptr<NetDevice> currentDevice = sw->GetDevice(j);
+            Ptr<Channel> channel = currentDevice->GetChannel();
+            uint32_t connected_node_id = 0;
+            bool is_connected = false;
+            
+            if (channel) {
+                for (uint32_t idx = 0; idx < channel->GetNDevices(); idx++) {
+                    Ptr<NetDevice> peerDevice = channel->GetDevice(idx);
+                    if (peerDevice != currentDevice) {
+                        Ptr<Node> peerNode = peerDevice->GetNode();
+                        if (peerNode) {
+                            connected_node_id = peerNode->GetId();
+                            is_connected = true;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // 组装端口标识：switch_id-connected_node_id
+            std::string ident = is_connected 
+                               ? (std::to_string(switch_id) + "-" + std::to_string(connected_node_id)) 
+                               : (std::to_string(switch_id) + "-unconnected-" + std::to_string(j));
+            port_identifiers.push_back(ident);
+            NS_LOG_DEBUG("交换机 " << switch_id << " 端口 " << j << " 标识: " << ident);
+            // 输出交换机ID、端口号及连接的节点ID
+            if (is_connected) {
+                NS_LOG_DEBUG("交换机 ID: " << switch_id << "，端口 " << j << " 连接到节点 ID: " << connected_node_id);
+            } else {
+                NS_LOG_DEBUG("交换机 ID: " << switch_id << "，端口 " << j << " 未连接到任何节点");
+            }
             uint32_t length = 0;
+            //计算该端口所有出端口队列的字节数
             for (uint32_t k = 0; k < SwitchMmu::qCnt; k++) {
                 length += sw->m_mmu->egress_bytes[j][k];
             }
+            NS_LOG_DEBUG("交换机 " << switch_id << " 端口 " << j << " 的队列长度: " << length << " bytes");
+            //队列占用率
             box->AddValue(double(length)/switch_buffer_bytes);
+            NS_LOG_DEBUG("交换机 " << switch_id << " 端口 " << j << " 的队列占用率: " << double(length)/switch_buffer_bytes);
             // txRate and ecnRate
             uint64_t max_port_rate =  DynamicCast<QbbNetDevice>(sw->GetDevice(j))->GetDataRate().GetBitRate();
             box->AddValue(sw->GetPortRate(j)/max_port_rate);
@@ -185,9 +231,11 @@ Ptr<OpenGymDataContainer> MyGetObservation(void) {
             box->AddValue(sw->m_mmu->pmax[j]);
         }
     }
+    // 关键：打印port_identifiers长度，确认非空
+    NS_LOG_DEBUG("生成的port_identifiers长度: " << port_identifiers.size());
     return box;
 }
-
+//reward在python计算
 float MyGetReward(void) {
     // OpenGym has a reward value in float, but we aggregate the status of all ports in one single observation, and we don't have a single reward value.
     // So here we don't use reward generated from ns-3. Instead, we generate reward from python side.
@@ -195,11 +243,38 @@ float MyGetReward(void) {
     return 0;
 }
 
+bool g_has_returned_identifiers = false;
 std::string MyGetExtraInfo(void) {
-    std::string myInfo = to_string(Simulator::Now().ToDouble(Time::S)) + "s";
-    return myInfo;
-}
+    // std::string myInfo = to_string(Simulator::Now().ToDouble(Time::S)) + "s";
+    // return myInfo;
 
+    // 条件：1.未返回过标识 2.标识已生成 3.非reset阶段（时间>1e-6秒）
+    // if (!g_has_returned_identifiers && !port_identifiers.empty()) {
+        g_has_returned_identifiers = true; // 标记为已返回，后续不再返回
+        
+        // 生成标准JSON（确保格式无错）
+        std::stringstream ss;
+        ss << "{\"port_identifiers\": [";
+        for (size_t i = 0; i < port_identifiers.size(); ++i) {
+            if (i > 0) ss << ", "; // 避免末尾多余逗号
+            ss << "\"" << port_identifiers[i] << "\""; // 每个标识用双引号包裹
+        }
+        ss << "]}";
+        
+        std::string info = ss.str();
+        NS_LOG_UNCOND("✅ NS3首次step返回port_identifiers（数量：" << port_identifiers.size() << "）: " << info);
+        return info;
+    // } else {
+    //     // 返回时间（保留6位小数，避免格式错误）
+    //     std::stringstream time_ss;
+    //     time_ss << std::fixed << std::setprecision(6) << Simulator::Now().ToDouble(Time::S);
+    //     std::string time_str = time_ss.str();
+    //     std::string info = "{\"time\":" + time_str + "}";
+    //     NS_LOG_DEBUG("NS3返回时间信息: " << info);
+    //     return info;
+    // }
+}
+//获取kmin、kmax、pmax并进行设置
 bool MyExecuteActions(Ptr<OpenGymDataContainer> action) {
     // Python gives action in float for some unknown reasons...
     Ptr<OpenGymBoxContainer<float>> actions = DynamicCast<OpenGymBoxContainer<float>>(action);
@@ -224,9 +299,9 @@ bool MyExecuteActions(Ptr<OpenGymDataContainer> action) {
             uint32_t kmin_in_byte = norm_kmin * (max_kmin - min_kmin) + min_kmin;
             uint32_t kmax_in_byte = norm_kmax * (max_kmax - min_kmax) + min_kmax;
 
-            // NS_LOG_UNCOND("Switch " << i << " Port " << j << " ConfigECN (bytes) Kmin = " << kmin_in_byte << " Kmax = " << kmax_in_byte);
+            NS_LOG_UNCOND("Switch " << i << " Port " << j << " ConfigECN (bytes) Kmin = " << kmin_in_byte << " Kmax = " << kmax_in_byte);
 
-            sw->m_mmu->ConfigEcn(j, int((kmin_in_byte/1000)+0.5), int((kmax_in_byte/1000)+0.5), pmax);
+            sw->m_mmu->ConfigEcn(j, kmin_in_byte / 1000, kmax_in_byte / 1000, pmax);
             configure_idx += 3;
         }
     }
@@ -240,7 +315,7 @@ void ScheduleNextStateRead(double envStepTime, Ptr<OpenGymInterface> openGym) {
     }
     openGym->NotifyCurrentState();
 }
-
+//定期收集网络指标并写入文件
 void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate) {
     if (!MyGetGameOver()) {
         Simulator::Schedule(Seconds(monitorInterval), &ScheduleNetworkMonitor, monitorInterval, qlen, txrate);
@@ -252,20 +327,65 @@ void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate) {
     for (uint32_t idx_switch = 0; idx_switch < opengym_n_switches; idx_switch++ ) {
         Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(opengym_switches_pool.Get(idx_switch));
         uint32_t switch_buffer_bytes = sw->m_mmu->buffer_size;
+        uint32_t switch_id = sw->GetId(); // 1. 获取交换机真实ID（替换原idx_switch）
 
         for (uint32_t idx_port = 1; idx_port < sw->GetNDevices(); idx_port++) {
-            // queue length of each port
+            // 2. 获取当前端口连接的节点ID（替换原idx_port）
+            Ptr<NetDevice> currentDevice = sw->GetDevice(idx_port);
+            Ptr<Channel> channel = currentDevice->GetChannel();
+            uint32_t connected_node_id = 0; // 默认值（未连接时标记为0）
+            bool is_connected = false;
+
+            if (channel) { // 若端口存在关联信道
+                for (uint32_t ch_dev_idx = 0; ch_dev_idx < channel->GetNDevices(); ch_dev_idx++) {
+                    Ptr<NetDevice> peerDevice = channel->GetDevice(ch_dev_idx);
+                    if (peerDevice != currentDevice) { // 找到非当前设备的对端设备
+                        Ptr<Node> peerNode = peerDevice->GetNode();
+                        if (peerNode) { // 确保对端设备关联到节点
+                            connected_node_id = peerNode->GetId();
+                            is_connected = true;
+                        }
+                        break; // 信道仅连接两个设备，找到后退出循环
+                    }
+                }
+            }
+
+            // 若端口未连接节点，打印日志提示（可选，便于调试）
+            if (!is_connected) {
+                NS_LOG_DEBUG("Switch " << switch_id << " Port " << idx_port << " is unconnected, mark connected_node_id as 0");
+            }
+
+            // 3. 计算当前端口队列长度（逻辑不变）
             uint32_t qlen_port = 0;
             for (uint32_t k = 1; k < SwitchMmu::qCnt; k++) {
                 qlen_port += sw->m_mmu->egress_bytes[idx_port][k];
             }
-            fprintf(qlen, "%d %d %d %d %.8f\n", idx_switch, switch_buffer_bytes, idx_port, qlen_port, Simulator::Now().GetSeconds());
-            uint64_t max_port_rate =  DynamicCast<QbbNetDevice>(sw->GetDevice(idx_port))->GetDataRate().GetBitRate();
+
+            // 4. 写入队列长度文件：替换 idx_switch→switch_id，idx_port→connected_node_id
+            fprintf(qlen, "%d %d %d %d %.8f\n", 
+                    switch_id,                // 原 idx_switch（交换机索引）→ 交换机ID
+                    switch_buffer_bytes,      // 不变（交换机缓冲区大小）
+                    connected_node_id,        // 原 idx_port（端口索引）→ 端口连接的节点ID
+                    qlen_port,                // 不变（端口队列长度）
+                    Simulator::Now().GetSeconds() // 不变（当前时间）
+                   );
+
+            // 5. 计算端口速率相关参数（逻辑不变）
+            uint64_t max_port_rate = DynamicCast<QbbNetDevice>(sw->GetDevice(idx_port))->GetDataRate().GetBitRate();
             double tx_rate = sw->GetPortRate(idx_port) / max_port_rate;
             double ecn_rate = sw->GetPortEcnRate(idx_port) / max_port_rate;
-            fprintf(txrate, "%d %d %lu %.8f %.8f %.8f\n", idx_switch, idx_port, max_port_rate, tx_rate, ecn_rate, Simulator::Now().GetSeconds());     
-            // tx rate and ecn rate of each port
 
+            // 6. 写入速率文件：同样替换 idx_switch→switch_id，idx_port→connected_node_id
+            fprintf(txrate, "%d %d %lu %.8f %.8f %.8f\n", 
+                    switch_id,                // 原 idx_switch（交换机索引）→ 交换机ID
+                    connected_node_id,        // 原 idx_port（端口索引）→ 端口连接的节点ID
+                    max_port_rate,            // 不变（端口最大速率）
+                    tx_rate,                  // 不变（端口发送速率占比）
+                    ecn_rate,                 // 不变（ECN标记速率占比）
+                    Simulator::Now().GetSeconds() // 不变（当前时间）
+                   );
+
+            // 重置速率统计（逻辑不变）
             if(!enable_copter) {
                 sw->ResetRateStats(idx_port, Simulator::Now().GetNanoSeconds());
             }
@@ -320,6 +440,7 @@ uint32_t flow_num;
 void ReadFlowInput(){
     if (flow_input.idx < flow_num){
         flowf >> flow_input.src >> flow_input.dst >> flow_input.pg >> flow_input.dport >> flow_input.maxPacketCount >> flow_input.start_time;
+        NS_LOG_UNCOND("Read flow input: " << flow_input.idx << " " << flow_input.src << "->" << flow_input.dst << " pg=" << flow_input.pg << " dport=" << flow_input.dport << " maxPacketCount=" << flow_input.maxPacketCount << " start_time=" << flow_input.start_time);
         NS_ASSERT(n.Get(flow_input.src)->GetNodeType() == 0 && n.Get(flow_input.dst)->GetNodeType() == 0);
         if (flow_input.idx == flow_num - 1)
             opengym_end_time = flow_input.start_time;
@@ -329,6 +450,7 @@ void ReadFlowInput(){
 }
 void ScheduleFlowInputs(){
     while (flow_input.idx < flow_num && Seconds(flow_input.start_time) == Simulator::Now()){
+        // NS_LOG_UNCOND("Simulator::Now()" << Simulator::Now());
         uint32_t port = portNumder[flow_input.src][flow_input.dst]++; // get a new port number 
         RdmaClientHelper clientHelper(flow_input.pg, serverAddress[flow_input.src], serverAddress[flow_input.dst], port, flow_input.dport, flow_input.maxPacketCount, has_win?(global_t==1?maxBdp:pairBdp[n.Get(flow_input.src)][n.Get(flow_input.dst)]):0, global_t==1?maxRtt:pairRtt[flow_input.src][flow_input.dst]);
         ApplicationContainer appCon = clientHelper.Install(n.Get(flow_input.src));
@@ -336,6 +458,7 @@ void ScheduleFlowInputs(){
 
         // get the next flow input
         flow_input.idx++;
+        NS_LOG_UNCOND("flow_input_num: " << flow_input.idx << " not end........................................." );
         ReadFlowInput();
     }
 
@@ -343,6 +466,7 @@ void ScheduleFlowInputs(){
     if (flow_input.idx < flow_num){
         Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs);
     }else { // no more flows, close the file
+        // NS_LOG_UNCOND("flow_input_num: " << flow_input.idx << " end........................................." );
         flowf.close();
     }
 }
@@ -938,6 +1062,8 @@ int main(int argc, char *argv[])
             n.Add(sw);
             sw->SetAttribute("EcnEnabled", BooleanValue(enable_qcn));
             opengym_switches_pool.Add(sw); // add switches to opengym_switches_pool
+            //打印switch id记录在NS_LOG中
+            NS_LOG_INFO("Switch ID: " << sw->GetId());
         }
     }
 
@@ -1221,8 +1347,10 @@ int main(int argc, char *argv[])
     }
 
     flow_input.idx = 0;
+    NS_LOG_INFO(flow_num << " flows in total.");
     if (flow_num > 0){
         ReadFlowInput();
+        NS_LOG_INFO("Schedule Flow Input.");
         Simulator::Schedule(Seconds(flow_input.start_time)-Simulator::Now(), ScheduleFlowInputs);
     }
 

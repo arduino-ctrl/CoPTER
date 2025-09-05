@@ -3,6 +3,7 @@
 
 from ns3gym import ns3env
 import numpy as np
+import json
 from collections import deque
 from loguru import logger
 from structures import NetworkHelperParameters, DCQCNParameters, PortObservation
@@ -37,12 +38,15 @@ class NetworkHelper:
         self.action = [0.0] * (self.n_port * self.nhp.port_actions)   
         self.action_port_bitmap = [0] * self.n_port  # Track the port index for each action
 
+        # Port identifier map for logging and analysis
+        self.port_identifier_map = {}  # port_idx → "switch_id-connected_node_id"
+
 
     def close_env(self):
         self.env.close()
         logger.info("ns3-gym environment closed.")
 
-
+    # 为指定端口设置动作
     def configurator(self, curr_step, port_idx, port_action: DCQCNParameters):
         """
         Insert the action of a single port into the action list in accordance with the port index.
@@ -58,10 +62,9 @@ class NetworkHelper:
         end_index = start_index + self.nhp.port_actions
         self.action[start_index:end_index] = port_action.k_min_norm, port_action.k_max_norm, port_action.p_max
         logger.info(f"Step {curr_step} - Port {port_idx} - Action set to {port_action}.")
-
         self.action_port_bitmap[port_idx] = 1  # Mark the port as having an action set
 
-
+    # 执行动作并获取新state
     def monitor(self, curr_step):
         """
         Step actions, monitor the environments, and save the observation history.
@@ -73,13 +76,71 @@ class NetworkHelper:
             # If current step is 0, reset the environment and get the initial observation
             obs = self.env.reset()
             obs = np.array(obs)
-            done = False
+            # done = False
+            # 2. 发送空动作（需确保所有端口标记为已设置动作）
+            default_param = DCQCNParameters()  # 默认值：k_min_norm=1.0, k_max_norm=1.0, p_max=0.2
+            logger.info(f"Step 0 - 使用默认参数初始化动作，而非空动作: {default_param}")
+            
+            # 2. 为所有端口填充默认动作（每个端口占3个位置：kmin/kmax/pmax）
+            self.action = []  # 清空原有全0列表
+            for port_idx in range(self.n_port):
+                # 依次添加当前端口的3个动作参数
+                self.action.extend([
+                    default_param.k_min_norm,
+                    default_param.k_max_norm,
+                    default_param.p_max
+                ])
+            self.action_port_bitmap = [1] * self.n_port  # 标记所有端口已设置（空动作）
+            
+            # 3. 首次step，获取环境信息（含port_identifiers）
+            obs, _, done, info = self.env.step(self.action)
+            logger.info(f"NS3 返回的 info 类型: {type (info)}") # 查看是 dict 还是 str
+            logger.info(f"NS3 返回的 info 完整内容: {info}") # 打印完整信息
+            # 关键：将字符串info解析为JSON字典
+            parsed_info = {}
+            try:
+                # 尝试解析JSON字符串
+                parsed_info = json.loads(info)
+                logger.info(f"成功解析info为JSON: {parsed_info}")
+            except json.JSONDecodeError as e:
+                logger.error(f"info解析失败: {e}，原始内容: {info}")
+                parsed_info = {"raw_info": info}
+            # 处理port_identifiers
+            if 'port_identifiers' in parsed_info:
+                received_identifiers = parsed_info['port_identifiers']
+                # 验证标识数量与端口数一致（448个）
+                if len(received_identifiers) == self.n_port:
+                    self.port_identifier_map = {
+                        idx: ident for idx, ident in enumerate(received_identifiers)
+                    }
+                    logger.success(f"✅ 成功获取{len(received_identifiers)}个端口标识（与端口数{self.n_port}匹配）")
+                    logger.info(f"端口标识映射表（前5个）: {dict(list(self.port_identifier_map.items())[:5])}")
+                else:
+                    logger.error(f"❌ 端口标识数量不匹配！接收{len(received_identifiers)}个，预期{self.n_port}个")
+            else:
+                logger.warning(f"当前info无port_identifiers（可能是偶发延迟），内容: {parsed_info}")
+                # 重试一次（避免偶发通信问题）
+                obs, _, done, retry_info = self.env.step(self.action)
+                try:
+                    retry_parsed = json.loads(retry_info)
+                    if 'port_identifiers' in retry_parsed:
+                        self.port_identifier_map = {
+                            idx: ident for idx, ident in enumerate(retry_parsed['port_identifiers'])
+                        }
+                        logger.success(f"🔄 重试后获取到{len(retry_parsed['port_identifiers'])}个端口标识")
+                except json.JSONDecodeError:
+                    logger.error(f"🔄 重试解析失败: {retry_info}")
+            obs = np.array(obs)
         else:
+            # 验证所有端口都设置了动作->执行动作->重置动作位图
             assert sum(self.action_port_bitmap) > self.n_port - 1, "Not all ports have actions set. Please check the configurator."
             obs, _, done, info = self.env.step(self.action)
+            # logger.info(obs)
+            print(obs)
             obs = np.array(obs)
+            # print(self.action)    
             self.action_port_bitmap = [0] * self.n_port  # Reset the action bitmap for the next step
-
+        # state归一化并存储
         for port_idx in range(self.n_port):
             start_index = port_idx * self.nhp.port_states
             # NOTE: The k_min_norm, k_max_norm, and p_max has been always limited to [20, 50], [50, 100] and [0, 1] range in ns-3 side.
@@ -130,7 +191,7 @@ class NetworkHelper:
             curr_port_state_list += self.obs_history[port_idx][history_idx].to_list()
         return curr_port_state_list
     
-    
+    # 端口reward计算
     def get_port_current_reward(self, port_idx):
         """
         Calculate the reward for the specified port based on the current observation.
