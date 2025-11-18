@@ -264,13 +264,13 @@ def partial_1():
 
 
 if __name__ == "__main__":
-    file_dir = "/home/ame/copter/simulation/output/"
+    file_dir = "/home/ame/copter/simulation/output/acc_dcqcn_06load_hadoop_5paramStep/"
     file_list = [
-        "copter_webserver_incast.fct",
-        "acc_webserver_incast.fct" # 可修改为需要分析的文件
+        "_dcqcn_06load_hadoop_5paramStep.fct"
+        # "acc_webserver_incast.fct" # 可修改为需要分析的文件
     ]
 
-    output_path = "fct_result"
+    output_path = "acc_dcqcn_06load_hadoop_5paramStep"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     

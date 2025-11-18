@@ -5,7 +5,7 @@ import random
 from loguru import logger
 from scipy.interpolate import RegularGridInterpolator
 
-from backbone import DualHeadNN, TripleHeadNN
+from backbone import DualHeadNN, TripleHeadACC, TripleHeadCoPTER
 from structures import DCQCNParameters, AgentParameters
 
 
@@ -51,9 +51,9 @@ class ACC(Agent):
         # Model Initialization
         self.device = torch.device("cpu")
         # 初始化策略网络（评估网络），每个训练步更新
-        self.policy_net = TripleHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device)
+        self.policy_net = TripleHeadACC(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device)
         # 初始化目标网络，定期更新
-        self.target_net = TripleHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device) 
+        self.target_net = TripleHeadACC(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device) 
         # 创建优化器，adam优化算法
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=self.p.learning_rate)
         # 计算损失函数
@@ -199,8 +199,8 @@ class CoPTER(Agent):
         # copter修改为三头
         # self.policy_net = DualHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim).to(self.device)
         # self.target_net = DualHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim).to(self.device) 
-        self.policy_net = TripleHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device)
-        self.target_net = TripleHeadNN(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device) 
+        self.policy_net = TripleHeadCoPTER(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device)
+        self.target_net = TripleHeadCoPTER(self.p.state_dim, self.p.kmin_dim, self.p.kmax_dim, self.p.pmax_dim).to(self.device) 
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=self.p.learning_rate)
         self.loss_fn = torch.nn.MSELoss()
 
@@ -234,22 +234,43 @@ class CoPTER(Agent):
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
 
-    # # This is doubao's help
+# 修改：简化select_action，只基于Q值选择动作，不再融合fmaps
     def select_action(self, state, epsilon=0.1) -> tuple[DCQCNParameters, tuple[int, int, int]]:
         """
-        Select an action based on the current state and epsilon-greedy policy,
-        with dynamic action space refinement guided by central performance matrix.
-        Args:
-            state (list): The current state of the environment.
-            epsilon (float): The probability of selecting a random action.
-        Returns:
-            tuple: A tuple containing the selected action as a `DCQCNParameters` object and the action indices.
+        仅基于Q值选择动作，fmaps将在奖励计算中发挥作用
         """
-        # 基础离散值（保持原维度不变）
-        base_kmin = [0.0, 0.1429, 0.4286, 1.0]  # 4维：指数分布
-        base_kmax = [0.0, 0.1667, 0.3333, 0.5, 0.75, 1.0]  # 6维：分段递增
+        # base_kmin = [0.0, 0.3333, 0.6667, 1.0]  # 4维：均匀分布（间隔1/3）
+        # base_kmax = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]  # 6维：均匀分布（间隔0.2）
+        # base_kmin = [0.0, 0.1667, 0.3333, 0.5, 0.6667, 0.8333, 1.0]  # 7维：均匀分布（间隔1/6≈0.1667）
+        # base_kmin = [0.0000, 0.0337,0.1235,0.3622,1.0000]
+        base_kmin = [0.0000, 0.2041,0.4082, 0.6122,0.8163]
+        base_kmax = [0.0, 0.111, 0.222, 0.333, 0.444, 0.555, 0.666, 0.777, 0.888, 1.000] 
         pmax_values = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]  # 10维
         
+        # # 在线模式-e-greedy
+        # if random.random() < epsilon and self.online:
+        #     kmin_base_idx = random.randint(0, len(base_kmin) - 1)
+        #     kmax_base_idx = random.randint(0, len(base_kmax) - 1)
+        #     pmax_idx = random.randint(0, len(pmax_values) - 1)
+            
+        #     return (DCQCNParameters(base_kmin[kmin_base_idx], base_kmax[kmax_base_idx], pmax_values[pmax_idx]), 
+        #             (kmin_base_idx, kmax_base_idx, pmax_idx))
+        # else:
+        #     # 计算当前状态的Q值
+        #     state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        #     with torch.no_grad():
+        #         q_kmin, q_kmax, q_pmax = self.policy_net(state)
+            
+        #     # 选择Q值最大的动作
+        #     kmin_index = q_kmin.argmax().item()
+        #     kmax_index = q_kmax.argmax().item()
+        #     pmax_index = q_pmax.argmax().item()
+            
+        #     logger.info(f"CoPTER Agent {self.name} - 选择动作: Kmin索引: {kmin_index}, Kmax索引: {kmax_index}, Pmax索引: {pmax_index}")
+            
+        #     # 返回选择的动作参数和索引
+        #     return (DCQCNParameters(base_kmin[kmin_index], base_kmax[kmax_index], pmax_values[pmax_index]), 
+        #             (kmin_index, kmax_index, pmax_index))
         # 在线模式-e-greedy
         if random.random() < epsilon and self.online:
             # 随机选择基础索引
@@ -272,12 +293,12 @@ class CoPTER(Agent):
             with torch.no_grad():
                 q_kmin, q_kmax, q_pmax = self.policy_net(state)
             
-            # 生成局部Q矩阵（4*6）
+            # 生成局部Q矩阵（7*11）
             q_matrix = q_kmin.cpu().numpy()[0][:, None] + q_kmax.cpu().numpy()[0][None, :]
             pmax_index = q_pmax.argmax().item()
             logger.info(f"CoPTER Agent {self.name} - Q Values: Kmin: {q_kmin}, Kmax: {q_kmax}, Pmax: {q_pmax}")
             
-            # 全局指导矩阵（4*6）
+            # 全局指导矩阵（7*11）
             f_matrix = self.f_matrix.copy()
             
             # 1. 归一化处理
@@ -291,124 +312,34 @@ class CoPTER(Agent):
             
             q_norm = min_max_norm(q_matrix)  # 局部Q值归一化
             # q_norm = np.ones_like(q_matrix)  # 将 q_norm 设置为与 q_matrix 相同大小的全 1 矩阵
-            # f_norm = min_max_norm(f_matrix)  # 全局矩阵归一化
-            f_norm = f_matrix  # 全局矩阵不归一化，保持原始性能差异
+            f_norm = min_max_norm(f_matrix)  # 全局矩阵归一化
+            # f_norm = f_matrix  # 全局矩阵不归一化，保持原始性能差异
 
             # --------------------------融合方案1--------------------------------------------------------------------
             # f_norm = np.ones_like(f_norm)  # 将 f_norm 设置为全 1 矩阵
             # fusion = q_norm*f_norm
-            # fusion = q_norm
-            # fusion = 1 * q_norm + 0 * f_norm  # 简单加权融合
-            # fusion_index = np.unravel_index(np.argmax(fusion), fusion.shape)
-            # fusion_kmin_value = base_kmin[fusion_index[0]]
-            # fusion_kmax_value = base_kmax[fusion_index[1]]
-            
-            # # 日志输出
-            # logger.info(f"CoPTER Agent {self.name} - Q Matrix:\n{q_matrix}\n"
-            #             f"Guidance Matrix:\n{f_matrix}\n"
-            #             f"Normalized Q Matrix:\n{np.array2string(q_norm, precision=4)}\n"
-            #             f"Normalized Guidance Matrix:\n{np.array2string(f_norm, precision=4)}\n")
-            #             # f"Best Base Index: {best_base_idx}\n"
-            #             # f"Refined Kmin Candidates: {candidate_kmin}\n"
-            #             # f"Refined Kmax Candidates: {candidate_kmax}")
-            
-            # # 构建返回结果
-            # # fusion_index = (best_base_idx[0], best_base_idx[1], int(pmax_index))
-            # # logger.info(f"CoPTER Agent {self.name} - Selected Action: Kmin: {best_kmin_val}, Kmax: {best_kmax_val}")
-            # fusion_kmin_idx, fusion_kmax_idx = fusion_index  # 拆解二维元组
-            # full_action_index = (fusion_kmin_idx, fusion_kmax_idx, pmax_index)  # 拼接为三维元组
-            # return (DCQCNParameters(fusion_kmin_value, fusion_kmax_value, pmax_values[pmax_index]), 
-            #         full_action_index)
-
-            # --------------------------融合方案2----------------------------------------------------------------------
-            # # 2. 获取Q矩阵前5个最大值的下标
-            # # 展平矩阵并获取排序索引（降序）
-            # q_flat = q_norm.flatten()
-            # q_sorted_indices = np.argsort(q_flat)[::-1]  # 从大到小排序
-            # # 取前5个并转换为二维索引
-            # top_q_indices = [np.unravel_index(idx, q_norm.shape) for idx in q_sorted_indices[:5]]
-            
-            # # 3. 获取F矩阵前5个最大值的下标
-            # f_flat = f_norm.flatten()
-            # f_sorted_indices = np.argsort(f_flat)[::-1]  # 从大到小排序
-            # # 取前5个并转换为二维索引
-            # top_f_indices = [np.unravel_index(idx, f_norm.shape) for idx in f_sorted_indices[:5]]
-            
-            # # 4. 计算两个集合的交集
-            # # 转换为可哈希的元组集合以便计算交集
-            # top_q_set = set(tuple(idx) for idx in top_q_indices)
-            # top_f_set = set(tuple(idx) for idx in top_f_indices)
-            # intersection = top_q_set & top_f_set  # 交集
-            
-            # # 5. 确定最终选择的索引
-            # if intersection:
-            #     # 如果有交集，选择交集中F值最大的索引
-            #     max_f_value = -np.inf
-            #     best_index = None
-            #     for idx in intersection:
-            #         current_f_value = f_norm[idx]
-            #         if current_f_value > max_f_value:
-            #             max_f_value = current_f_value
-            #             best_index = idx
-            #     logger.info(f"选择了Q和F前5的交集: {best_index}，对应的F值: {max_f_value}")
-            # else:
-            #     # 如果没有交集，选择F矩阵中最大值的索引
-            #     best_index = top_f_indices[0]  # 已经是排序后的第一个
-            #     logger.info(f"Q和F前5没有交集，选择F矩阵最大值索引: {best_index}")
-            
-            # # 6. 获取最终选择的值
-            # best_kmin_idx, best_kmax_idx = best_index
-            # best_kmin_value = base_kmin[best_kmin_idx]
-            # best_kmax_value = base_kmax[best_kmax_idx]
-            
-            
-            # # 日志输出
-            # logger.info(f"CoPTER Agent {self.name} - Q Matrix:\n{q_matrix}\n"
-            #             f"Guidance Matrix:\n{f_matrix}\n"
-            #             f"Normalized Q Matrix:\n{np.array2string(q_norm, precision=4)}\n"
-            #             f"Normalized Guidance Matrix:\n{np.array2string(f_norm, precision=4)}\n"
-            #             f"Q矩阵前5索引: {top_q_indices}\n"
-            #             f"F矩阵前5索引: {top_f_indices}\n"
-            #             f"交集: {list(intersection)}\n"
-            #             f"最终选择索引: {best_index}")
-            
-            # # 构建返回结果
-            # full_action_index = (best_kmin_idx, best_kmax_idx, pmax_index)
-            # return (DCQCNParameters(best_kmin_value, best_kmax_value, pmax_values[pmax_index]), 
-            #         full_action_index)
-            # --------------------------融合方案3----------------------------------------------------------------
-            # 2. 分别找到Q矩阵和F矩阵归一化后的最大值下标
-            q_max_idx = np.unravel_index(np.argmax(q_norm), q_norm.shape)
-            f_max_idx = np.unravel_index(np.argmax(f_norm), f_norm.shape)
-            
-            # 3. 融合策略：取行索引的最小值，列索引的最大值
-            # 行索引（左端）取最小值
-            fused_row = min(q_max_idx[0], f_max_idx[0])
-            # 列索引（右端）取最大值
-            fused_col = max(q_max_idx[1], f_max_idx[1])
-            best_index = (fused_row, fused_col)
-            
-            # 日志输出融合过程
-            logger.info(f"Q矩阵最大值下标: {q_max_idx}, F矩阵最大值下标: {f_max_idx}")
-            logger.info(f"融合后下标: 行取最小({q_max_idx[0]}, {f_max_idx[0]})={fused_row}, 列取最大({q_max_idx[1]}, {f_max_idx[1]})={fused_col}")
-            
-            # 4. 获取最终选择的值
-            best_kmin_idx, best_kmax_idx = best_index
-            best_kmin_value = base_kmin[best_kmin_idx]
-            best_kmax_value = base_kmax[best_kmax_idx]
-            
-            # --------------------------融合方案结束--------------------------
+            # fusion = f_norm
+            # fusion = 0 * q_norm + 1 * f_norm  # 简单加权融合
+            fusion = 0.1 * q_norm + 0.9 * f_norm  
+            fusion_index = np.unravel_index(np.argmax(fusion), fusion.shape)
+            fusion_kmin_value = base_kmin[fusion_index[0]]
+            fusion_kmax_value = base_kmax[fusion_index[1]]
             
             # 日志输出
             logger.info(f"CoPTER Agent {self.name} - Q Matrix:\n{q_matrix}\n"
                         f"Guidance Matrix:\n{f_matrix}\n"
                         f"Normalized Q Matrix:\n{np.array2string(q_norm, precision=4)}\n"
-                        f"Normalized Guidance Matrix:\n{np.array2string(f_norm, precision=4)}\n"
-                        f"最终选择索引: {best_index}")
+                        f"Normalized Guidance Matrix:\n{np.array2string(f_norm, precision=4)}\n")
+                        # f"Best Base Index: {best_base_idx}\n"
+                        # f"Refined Kmin Candidates: {candidate_kmin}\n"
+                        # f"Refined Kmax Candidates: {candidate_kmax}")
             
             # 构建返回结果
-            full_action_index = (best_kmin_idx, best_kmax_idx, pmax_index)
-            return (DCQCNParameters(best_kmin_value, best_kmax_value, pmax_values[pmax_index]), 
+            # fusion_index = (best_base_idx[0], best_base_idx[1], int(pmax_index))
+            # logger.info(f"CoPTER Agent {self.name} - Selected Action: Kmin: {best_kmin_val}, Kmax: {best_kmax_val}")
+            fusion_kmin_idx, fusion_kmax_idx = fusion_index  # 拆解二维元组
+            full_action_index = (fusion_kmin_idx, fusion_kmax_idx, pmax_index)  # 拼接为三维元组
+            return (DCQCNParameters(fusion_kmin_value, fusion_kmax_value, pmax_values[pmax_index]), 
                     full_action_index)
     
     def train_model(self, state, action, reward, next_state):

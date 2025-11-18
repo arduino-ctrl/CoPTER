@@ -13,7 +13,7 @@ from agent import Agent, ACC, CoPTER
 
 DEFAULT_ACC_PARAMETER = AgentParameters(state_dim=18, kmin_dim=6, kmax_dim=4, pmax_dim=10, learning_rate=1e-3, gamma=0.95)
 # copter修改为三头
-DEFAULT_COPTER_PARAMETER = AgentParameters(state_dim=18, kmin_dim=4, kmax_dim=6, pmax_dim=10, learning_rate=1e-3, gamma=0.95, kmin_res=40, kmax_res=60)
+DEFAULT_COPTER_PARAMETER = AgentParameters(state_dim=18, kmin_dim=5, kmax_dim=10, pmax_dim=10, learning_rate=1e-3, gamma=0.95, kmin_res=40, kmax_res=60)
 
 # 经验回放机制，存储Agent经验
 class ReplayBuffer:
@@ -105,7 +105,7 @@ class AgentHelper:
                 agent = CoPTER(
                     f"{self.exp_name}_CoPTER_{port_idx}", 
                     DEFAULT_COPTER_PARAMETER, 
-                    f_matrix=np.ones((4, 6)),  # 临时默认矩阵
+                    f_matrix=np.ones((5, 10)),  # 临时默认矩阵
                     online=self.online
                 )
             
@@ -125,7 +125,7 @@ class AgentHelper:
                 # 先验证端口标识映射表是否存在
                 if not self.network_helper.port_identifier_map:
                     logger.error(f"❌ 端口{port_idx}加载fmap失败：未获取到端口标识映射表")
-                    self.port_fmaps[port_idx] = np.ones((4, 6))  # 默认矩阵避免崩溃
+                    self.port_fmaps[port_idx] = np.ones((5, 10))  # 默认矩阵避免崩溃
                     agent.f_matrix = self.port_fmaps[port_idx]
                     continue
                 # 获取真实端口标识（此时已从NS3获取）
@@ -210,13 +210,24 @@ class AgentHelper:
         # logger.info(f"Saved shared replay buffer at {shared_rb_path}")
 
 
-    def record(self, port_idx, state, action, reward, next_state):
-        # Record a single experience into replay buffer
+     # 修改：记录经验时传入fmap和action以计算融合奖励
+    def record(self, port_idx, state, action, next_state):
         if self.online:
+            # 获取当前端口的fmap（CoPTER模式用）
+            fmap = self.port_fmaps.get(port_idx, None) if self.mode == "CoPTER" else None
+            
+            # 计算奖励（根据模式选择计算方式）
+            reward = self.network_helper.get_port_current_reward(
+                port_idx=port_idx,
+                # mode=self.mode,  # 传递当前模式
+                # fmap=fmap,
+                # action=action if self.mode == "CoPTER" else None
+            )
+            
             self.rb_pool[port_idx].push(state, action, reward, next_state)
-            logger.info(f"Recorded experience for port {port_idx} recorded. Port experiences: {len(self.rb_pool[port_idx])}")
+            logger.info(f"Recorded experience for port {port_idx} (mode: {self.mode}) with reward {reward:.3f}")
         else:
-            logger.warning(f"AgentHelper is in offline mode. Experience recording is skipped for port {port_idx}.")
+            logger.warning(f"AgentHelper is in offline mode. Experience recording skipped for port {port_idx}.")
        
     # 共享经验池和本地经验池的上传和下载
     def sync(self):

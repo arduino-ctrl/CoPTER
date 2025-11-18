@@ -9,7 +9,8 @@ do
     
     # 执行命令并记录开始时间
     start_time=$(date +%s)
-    ./run-copter-sim.sh /home/ame/copter/simulation/mix/copter_webserver_t0.05_l0.7.conf
+    # ./run-copter-sim.sh /home/ame/copter/simulation/mix/mix_webserver_websearch_hadoop_clusters/acc_mix_webserver_websearch_hadoop_clusters.conf --port=5555
+    ./run-copter-sim.sh /home/ame/copter/simulation/mix/thesis_mix_webserver_websearch/copter_thesis_mix_webserver_websearch.conf --port=5555
     
     # 计算命令执行时间
     end_time=$(date +%s)

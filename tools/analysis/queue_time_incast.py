@@ -681,18 +681,21 @@ def batch_analyze_queue_files(
 
 if __name__ == "__main__":
     # -------------------------- 配置参数（根据需求修改） --------------------------
-    QUEUE_FILE_DIR = "/home/ame/copter/simulation/output"  # 队列监控文件目录
+    QUEUE_FILE_DIR = "/home/ame/copter/simulation/output/mix_webserver_websearch_hadoop_clusters"  # 队列监控文件目录
     QUEUE_FILE_LIST = [
-        "acc_webserver_incast.queue",
-        "copter_webserver_incast.queue",
-        "copter_webserver_incast_like_acc.queue",
-        "copter_webserver_incast_m3.queue"
+        # "acc_webserver_incast.queue",
+        # "copter_webserver_incast.queue",
+        # "copter_webserver_incast_like_acc.queue",
+        # "copter_webserver_incast_m3.queue"
+        "acc_mix_webserver_websearch_hadoop_clusters.queue",
+        "copter_mix_webserver_websearch_hadoop_clusters.queue",
+        "m3_mix_webserver_websearch_hadoop_clusters.queue"
     ]
     MAIN_OUTPUT_DIR = "queue_analysis_results"  # 结果总目录
-    CUSTOM_SUBFOLDER = "webserver_incast_smoothed"  # 自定义子目录
+    CUSTOM_SUBFOLDER = "mix_webserver_websearch_hadoop_clusters"  # 自定义子目录
     START_TIME = 2.00  # 聚焦起始时间（如Incast发生时间）
     WINDOW_SIZE = 0.05  # 聚焦时间窗口（如0.05s=50ms）
-    BASELINE_FILENAME = "acc_webserver_incast.queue"  # 基准文件名（可选）
+    BASELINE_FILENAME = "copter_mix_webserver_websearch_hadoop_clusters.queue"  # 基准文件名（可选）
     TARGET_SWITCH_ID = 264  # 目标交换机ID（如Incast场景的264）
     PLOT_PORT_LEVEL = True  # 是否绘制端口级曲线
 

@@ -76,20 +76,9 @@ class NetworkHelper:
             # If current step is 0, reset the environment and get the initial observation
             obs = self.env.reset()
             obs = np.array(obs)
-            # done = False
+            done = False
             # 2. 发送空动作（需确保所有端口标记为已设置动作）
-            default_param = DCQCNParameters()  # 默认值：k_min_norm=1.0, k_max_norm=1.0, p_max=0.2
-            logger.info(f"Step 0 - 使用默认参数初始化动作，而非空动作: {default_param}")
-            
-            # 2. 为所有端口填充默认动作（每个端口占3个位置：kmin/kmax/pmax）
-            self.action = []  # 清空原有全0列表
-            for port_idx in range(self.n_port):
-                # 依次添加当前端口的3个动作参数
-                self.action.extend([
-                    default_param.k_min_norm,
-                    default_param.k_max_norm,
-                    default_param.p_max
-                ])
+            self.action = [0.0] * (self.n_port * self.nhp.port_actions)  
             self.action_port_bitmap = [1] * self.n_port  # 标记所有端口已设置（空动作）
             
             # 3. 首次step，获取环境信息（含port_identifiers）
@@ -98,38 +87,27 @@ class NetworkHelper:
             logger.info(f"NS3 返回的 info 完整内容: {info}") # 打印完整信息
             # 关键：将字符串info解析为JSON字典
             parsed_info = {}
-            try:
-                # 尝试解析JSON字符串
-                parsed_info = json.loads(info)
-                logger.info(f"成功解析info为JSON: {parsed_info}")
-            except json.JSONDecodeError as e:
-                logger.error(f"info解析失败: {e}，原始内容: {info}")
-                parsed_info = {"raw_info": info}
-            # 处理port_identifiers
-            if 'port_identifiers' in parsed_info:
-                received_identifiers = parsed_info['port_identifiers']
-                # 验证标识数量与端口数一致（448个）
-                if len(received_identifiers) == self.n_port:
-                    self.port_identifier_map = {
-                        idx: ident for idx, ident in enumerate(received_identifiers)
-                    }
-                    logger.success(f"✅ 成功获取{len(received_identifiers)}个端口标识（与端口数{self.n_port}匹配）")
-                    logger.info(f"端口标识映射表（前5个）: {dict(list(self.port_identifier_map.items())[:5])}")
-                else:
-                    logger.error(f"❌ 端口标识数量不匹配！接收{len(received_identifiers)}个，预期{self.n_port}个")
-            else:
-                logger.warning(f"当前info无port_identifiers（可能是偶发延迟），内容: {parsed_info}")
-                # 重试一次（避免偶发通信问题）
-                obs, _, done, retry_info = self.env.step(self.action)
+            if isinstance(info, str):
                 try:
-                    retry_parsed = json.loads(retry_info)
-                    if 'port_identifiers' in retry_parsed:
-                        self.port_identifier_map = {
-                            idx: ident for idx, ident in enumerate(retry_parsed['port_identifiers'])
-                        }
-                        logger.success(f"🔄 重试后获取到{len(retry_parsed['port_identifiers'])}个端口标识")
+                    # 尝试解析JSON字符串
+                    parsed_info = json.loads(info)
+                    logger.info(f"成功解析info为JSON: {parsed_info}")
                 except json.JSONDecodeError:
-                    logger.error(f"🔄 重试解析失败: {retry_info}")
+                    # 解析失败（如纯时间字符串）
+                    logger.error(f"info字符串无法解析为JSON: {info}")
+                    parsed_info = {"raw_info": info}
+            else:
+                parsed_info = info  
+            if 'port_identifiers' in parsed_info:
+                self.port_identifier_map = {
+                    idx: ident for idx, ident in enumerate(parsed_info['port_identifiers'])
+                }
+                # 关键：打印从NS3获取的原始标识列表
+                logger.info(f"从NS3获取到端口标识列表: {parsed_info['port_identifiers']}")
+                logger.info(f"端口标识映射表: {self.port_identifier_map}")
+            else:
+                logger.error("未从NS3获取到port_identifiers，无法正确加载fmap")
+                logger.error(f"解析后的info中无port_identifiers，内容: {parsed_info}")
             obs = np.array(obs)
         else:
             # 验证所有端口都设置了动作->执行动作->重置动作位图

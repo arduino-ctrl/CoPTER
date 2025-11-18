@@ -58,6 +58,7 @@ std::string fct_output_file = "fct.txt";
 std::string pfc_output_file = "pfc.txt";
 std::string qlen_monitor_file = "qlen_monitor.txt";
 std::string txrate_monitor_file = "txrate_monitor.txt";
+std::string throughput_output_file = "throughput.txt";
 
 double alpha_resume_interval = 55, rp_timer, ewma_gain = 1 / 16;
 double rate_decrease_interval = 4;
@@ -109,12 +110,17 @@ uint32_t opengym_n_state_per_port = 6; // number of state variables per port
 uint32_t opengym_n_action_per_port = 3; // number of action variables per port
 
 // Kmin and Kmax are set for 25Gbps links, convertion needed for max/min Kmin/Kmax
-const double opengym_min_kmin = 20000; // 20KB
-const double opengym_max_kmin = 50000; // 50KB
-const double opengym_min_kmax = 50000; // 50KB
-const double opengym_max_kmax = 100000; // 100KB
+double opengym_min_kmin = 20000; // 20KB
+double opengym_max_kmin = 50000; // 50KB
+double opengym_min_kmax = 50000; // 50KB
+double opengym_max_kmax = 100000; // 100KB
+// const double opengym_max_kmin = 1000000; // 50KB
+// const double opengym_min_kmax = 1000000; // 50KB
+// const double opengym_max_kmax = 10000000; // 100KB
 
 std::vector<std::string> port_identifiers; // 存储每个端口的"switch_id-connected_node_id"
+// 记录每个端口的字节传输历史，用于计算吞吐量
+std::unordered_map<std::string, uint64_t> port_bytes_history;
 
 
 // Ptr<OpenGymInterface> openGym = CreateObject<OpenGymInterface> (opengym_socket_port);
@@ -150,6 +156,14 @@ Ptr<OpenGymSpace> MyGetActionSpace(void) {
 
 bool MyGetGameOver(void) {
     bool flag = Simulator::Now().GetSeconds() > opengym_end_time;
+    //     // 根据ENABLE_COPTER切换终止条件
+    // if (enable_copter) {
+    //     // 启用OpenGym时，用原逻辑
+    //     flag = Simulator::Now().GetSeconds() > opengym_end_time;
+    // } else {
+    //     // 不启用OpenGym时，直接用配置的仿真总时长
+    //     flag = Simulator::Now().GetSeconds() > simulator_stop_time;
+    // }
     NS_LOG_UNCOND("game over " << Simulator::Now().GetSeconds()<<"---"<<flag);
     return Simulator::Now().GetSeconds() > opengym_end_time;
     // return Simulator::Now().GetSeconds() > simulator_stop_time;
@@ -316,14 +330,15 @@ void ScheduleNextStateRead(double envStepTime, Ptr<OpenGymInterface> openGym) {
     openGym->NotifyCurrentState();
 }
 //定期收集网络指标并写入文件
-void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate) {
+void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate, FILE* throughput) {
     if (!MyGetGameOver()) {
-        Simulator::Schedule(Seconds(monitorInterval), &ScheduleNetworkMonitor, monitorInterval, qlen, txrate);
+        Simulator::Schedule(Seconds(monitorInterval), &ScheduleNetworkMonitor, monitorInterval, qlen, txrate,throughput);
     }
 
     NS_LOG_UNCOND("Network Monitor at " << Simulator::Now().GetSeconds() << "s");
+    NS_LOG_UNCOND("NOW TIME: " << Simulator::Now().GetSeconds());
 
-    // monitor the queue length and tx rate of each port
+    // monitor the queue length, tx rate and throughput of each port
     for (uint32_t idx_switch = 0; idx_switch < opengym_n_switches; idx_switch++ ) {
         Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(opengym_switches_pool.Get(idx_switch));
         uint32_t switch_buffer_bytes = sw->m_mmu->buffer_size;
@@ -384,6 +399,30 @@ void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate) {
                     ecn_rate,                 // 不变（ECN标记速率占比）
                     Simulator::Now().GetSeconds() // 不变（当前时间）
                    );
+            
+            // 计算吞吐量 (新增部分)
+            std::string port_key = std::to_string(switch_id) + "-" + std::to_string(connected_node_id);
+            uint64_t current_bytes = sw->GetPortTotalTxBytes(idx_port);  // 获取端口总传输字节数
+            
+            // 计算吞吐量 (bps)
+            double throughput_val = 0.0;
+            if (port_bytes_history.find(port_key) != port_bytes_history.end()) {
+                uint64_t prev_bytes = port_bytes_history[port_key];
+                uint64_t bytes_transferred = current_bytes - prev_bytes;
+                throughput_val = (double)bytes_transferred * 8 / monitorInterval;  // 转换为比特/秒
+            }
+            
+            // 记录当前字节数用于下次计算
+            port_bytes_history[port_key] = current_bytes;
+
+            // 写入吞吐量文件 (新增部分)
+            fprintf(throughput, "%d %d %.8f %.8f %lu\n",
+                    switch_id,                // 交换机ID
+                    connected_node_id,        // 连接的节点ID
+                    throughput_val,           // 吞吐量 (bps)
+                    Simulator::Now().GetSeconds(),  // 时间戳
+                    max_port_rate             // 端口最大速率 (用于参考)
+                   );
 
             // 重置速率统计（逻辑不变）
             if(!enable_copter) {
@@ -391,8 +430,13 @@ void ScheduleNetworkMonitor(double monitorInterval, FILE* qlen, FILE* txrate) {
             }
         }
     }
+    NS_LOG_UNCOND("Network Monitor Finished at " << Simulator::Now().GetSeconds() << "s");
     fprintf(qlen, "\n");
     fprintf(txrate, "\n");
+    fprintf(throughput, "\n");  // 吞吐量文件也添加分隔符
+    fflush(qlen);
+    fflush(txrate);
+    fflush(throughput);  // 刷新吞吐量文件
 }
 
 
@@ -657,6 +701,13 @@ uint64_t get_nic_rate(NodeContainer &n){
 
 int main(int argc, char *argv[])
 {
+    // 1. 初始化命令行解析器
+    CommandLine cmd;
+    // 2. 添加端口参数（--port 或 -p），默认值 5555，关联到全局变量
+    cmd.AddValue("port", "OpenGym socket port number", opengym_socket_port);
+    // 3. 解析命令行参数（会覆盖默认值）
+    cmd.Parse(argc, argv);
+    
     clock_t begint, endt;
     begint = clock();
 #ifndef PGO_TRAINING
@@ -996,6 +1047,38 @@ int main(int argc, char *argv[])
                 conf >> pint_prob;
                 std::cout << "PINT_PROB\t\t\t\t" << pint_prob << '\n';
             }
+            else if (key.compare("THROUGHPUT_OUTPUT_FILE") == 0){
+                conf >> throughput_output_file;
+                std::cout << "THROUGHPUT_OUTPUT_FILE\t\t" << throughput_output_file << '\n';
+            }
+            else if (key.compare("OPENGYM_MIN_KMIN") == 0)
+            {
+                double v;
+                conf >> v;
+                opengym_min_kmin = v;
+                std::cout << "OPENGYM_MIN_KMIN\t\t" << opengym_min_kmin << " bytes (" << opengym_min_kmin/1000 << "KB)\n";
+            }
+            else if (key.compare("OPENGYM_MAX_KMIN") == 0)
+            {
+                double v;
+                conf >> v;
+                opengym_max_kmin = v;
+                std::cout << "OPENGYM_MAX_KMIN\t\t" << opengym_max_kmin << " bytes (" << opengym_max_kmin/1000 << "KB)\n";
+            }
+            else if (key.compare("OPENGYM_MIN_KMAX") == 0)
+            {
+                double v;
+                conf >> v;
+                opengym_min_kmax = v;
+                std::cout << "OPENGYM_MIN_KMAX\t\t" << opengym_min_kmax << " bytes (" << opengym_min_kmax/1000 << "KB)\n";
+            }
+            else if (key.compare("OPENGYM_MAX_KMAX") == 0)
+            {
+                double v;
+                conf >> v;
+                opengym_max_kmax = v;
+                std::cout << "OPENGYM_MAX_KMAX\t\t" << opengym_max_kmax << " bytes (" << opengym_max_kmax/1000 << "KB)\n";
+            }
             fflush(stdout);
         }
         conf.close();
@@ -1272,6 +1355,7 @@ int main(int argc, char *argv[])
             uint64_t delay = pairDelay[n.Get(i)][n.Get(j)];
             uint64_t txDelay = pairTxDelay[n.Get(i)][n.Get(j)];
             uint64_t rtt = delay * 2 + txDelay;
+            NS_LOG_INFO("rtt " << n.Get(i)->GetId() << "->" << n.Get(j)->GetId() << " = " << rtt << " us");
             uint64_t bw = pairBw[i][j];
             uint64_t bdp = rtt * bw / 1000000000/8; 
             pairBdp[n.Get(i)][n.Get(j)] = bdp;
@@ -1369,6 +1453,7 @@ int main(int argc, char *argv[])
     // add qlen and txrate monitor
     FILE* qlen_monitor = enable_monitor ? fopen(qlen_monitor_file.c_str(), "w") : 0;
     FILE* txrate_monitor = enable_monitor ? fopen(txrate_monitor_file.c_str(), "w") : 0;
+    FILE* throughput_monitor = enable_monitor ? fopen(throughput_output_file.c_str(), "w") : 0; 
 
     // OpenGym Env
 
@@ -1398,7 +1483,7 @@ int main(int argc, char *argv[])
     if (enable_monitor) {
         // Note: the monitor interval is a little bit smaller than the step time to make sure the readout value is not zero.
         //       Maybe we need a more viable way to do this.
-        Simulator::Schedule(Seconds(2.000 + opengym_monitor_interval - 0.00001), &ScheduleNetworkMonitor, opengym_monitor_interval, qlen_monitor, txrate_monitor);
+        Simulator::Schedule(Seconds(2.000 + opengym_monitor_interval - 0.00001), &ScheduleNetworkMonitor, opengym_monitor_interval, qlen_monitor, txrate_monitor, throughput_monitor);
     }
 
     //
@@ -1408,10 +1493,11 @@ int main(int argc, char *argv[])
     fflush(stdout);
     NS_LOG_INFO("Run Simulation.");
     Simulator::Stop(Seconds(simulator_stop_time));
+    NS_LOG_INFO("now time: " << Simulator::Now().GetSeconds());
     Simulator::Run();
-    NS_LOG_INFO("Simulation Run.");
+    NS_LOG_INFO("Simulation Run."<<" now time: " << Simulator::Now().GetSeconds());
     Simulator::Destroy();
-    NS_LOG_INFO("Simulation Done.");
+    NS_LOG_INFO("Simulation Done."<<" now time: " << Simulator::Now().GetSeconds());
     fclose(trace_output);
 
     endt = clock();

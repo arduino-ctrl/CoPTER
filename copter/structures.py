@@ -6,7 +6,7 @@ class NetworkHelperParameters:
     port_states: int = 6
     port_actions: int = 2
     state_observations: int = 3
-    switch_buffer_size: int = 400  # in KB
+    switch_buffer_size: int = 10000  # in KB
 
 
 @dataclass

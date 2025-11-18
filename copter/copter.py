@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--model_dir", type=str, default="models", help="model_dir: The directory where the model is stored.")
     parser.add_argument("-s", "--static_steps", type=int, default=4, help="static_steps: The number of initial steps to keep the actions static.")
     parser.add_argument("-i", "--train_intervals", type=int, default=8, help="train_intervals: The number of intervals for training the agent.")
-    parser.add_argument("-b", "--switch_buffer", type=int, default=400, help="switch_buffer: The size of switch buffer in bytes.")
+    parser.add_argument("-b", "--switch_buffer", type=int, default=10000, help="switch_buffer: The size of switch buffer in bytes.")
     args = parser.parse_args()
 
     # Print the parsed arguments
@@ -99,9 +99,10 @@ if __name__ == "__main__":
                         current_state = network_helper.get_port_current_state_list(port_idx)
                         last_state = network_helper.get_port_last_state_list(port_idx)
                         action = actions[port_idx]
-                        reward = network_helper.get_port_current_reward(port_idx)
+                        # reward = network_helper.get_port_current_reward(port_idx)
                         # Add the experience to the agent's replay buffer
-                        agent_helper.record(port_idx, last_state, action, reward, current_state)
+                        # agent_helper.record(port_idx, last_state, action, reward, current_state)
+                        agent_helper.record(port_idx, last_state, action, current_state)
 
                 # Train the agent every `train_intervals` steps
                 if args.online and current_step % args.train_intervals == 0:

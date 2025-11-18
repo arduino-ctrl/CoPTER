@@ -246,12 +246,19 @@ def partial_1():
 if __name__ == "__main__":
     # file = "/home/ame/copter/simulation/output/GoogleRPCHPCC_SECN_load0.9.fct"
     
-    file_dir = "/home/ame/copter/simulation/output/"
+    # file_dir = "/home/ame/copter/simulation/output/"
+    file_dir = "/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load"
     file_list = [
         # "WebServerDCQCN_SECN_load0.7.fct"
-        # "acc_webserver_t0.05_l0.7.fct"
+        "acc_thesis_cachefollower_0.05t_0.9load.fct",
+        "copter_thesis_cachefollower_0.05t_0.9load.fct",
+        "m3_thesis_cachefollower_0.05t_0.9load.fct",
+        "dcqcn_thesis_cachefollower_0.05t_0.9load.fct",
+        "hpcc_thesis_cachefollower_0.05t_0.9load.fct",
+        "m4_thesis_cachefollower_0.05t_0.9load.fct"
+        # "m3_mix_webserver_websearch_hadoop_clusters.fct"
         # "copter_webserver_t0.05_l0.7 copy.fct"
-        "copter_webserver_t0.05_l0.7.fct"
+        # "_dcqcn_06load_hadoop_5paramStep.fct"
         # "copter_Hadoop_n256_t0.05_l0.9.fct"
         # "acc_webserver_incast.fct"
         # "copter_webserver_incast_m3.fct"
@@ -289,7 +296,7 @@ if __name__ == "__main__":
     #     "HadoopDCQCN_SECN_load0.9.fct",
     # ]
 
-    output_path = "SECN_result"
+    output_path = "thesis_cachefollower_0.05t_0.9load"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     

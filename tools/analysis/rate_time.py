@@ -4,10 +4,12 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import List, Tuple, Union, Dict
 from tqdm import tqdm
-
+import seaborn as sns
+import pandas as pd  # 补充导入pandas
+from pathlib import Path
 
 # ------------------------------
-# 数据结构定义
+# 原有代码保持不变（数据结构、解析、绘图函数等）
 # ------------------------------
 @dataclass
 class PortMonitor:
@@ -18,27 +20,19 @@ class PortMonitor:
     ecnrate: float          # ECN标记速率（归一化）
     monitor_time_s: float   # 监控时间（秒）
 
-
-# ------------------------------
-# 单文件解析与处理
-# ------------------------------
 def parse_rate_line(line: str, line_num: int) -> Union[PortMonitor, None]:
-    """解析单条速率监控数据，含错误处理"""
     stripped_line = line.strip()
-    # 处理空行
     if not stripped_line:
         print(f"警告：第{line_num}行是空行，已跳过")
         return None
     
     parts = stripped_line.split()
-    # 检查字段数量（需6个字段：switch_id, port_id, maxrate, txrate, ecnrate, monitor_time_s）
     if len(parts) < 6:
         print(f"警告：第{line_num}行字段不足6个（实际{len(parts)}个），内容：{stripped_line}")
         return None
     if len(parts) > 6:
         print(f"警告：第{line_num}行字段超过6个（实际{len(parts)}个），将使用前6个字段，内容：{stripped_line}")
     
-    # 数值类型转换（捕获异常）
     try:
         return PortMonitor(
             switch_id=int(parts[0]),
@@ -52,27 +46,22 @@ def parse_rate_line(line: str, line_num: int) -> Union[PortMonitor, None]:
         print(f"警告：第{line_num}行数值转换失败 - {str(e)}，内容：{stripped_line}")
         return None
 
-
 def process_single_rate_file(
     file_path: str,
-    skip_initial_points: int = 2  # 跳过初始不稳定数据点（原代码逻辑保留）
+    skip_initial_points: int = 2
 ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], None]:
-    """处理单个速率监控文件，返回平均/99分位数的TxRate和EcnRate数组"""
     monitor_records: List[PortMonitor] = []
     
-    # 检查文件是否存在
     if not os.path.exists(file_path):
         print(f"错误：文件不存在 -> {file_path}")
         return None
     
-    # 读取并解析文件
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         for line_num, line in enumerate(f, 1):
             record = parse_rate_line(line, line_num)
             if record:
                 monitor_records.append(record)
     
-    # 检查有效数据量
     if len(monitor_records) == 0:
         print(f"警告：文件无有效数据 -> {file_path}")
         return None
@@ -80,7 +69,6 @@ def process_single_rate_file(
         print(f"警告：文件数据量不足（{len(monitor_records)}条），无法跳过{skip_initial_points}个初始点 -> {file_path}")
         return None
 
-    # 按时间分桶（同时间戳的数据归为一个桶）
     time_buckets: Dict[float, List[PortMonitor]] = {}
     for record in monitor_records:
         time_key = record.monitor_time_s
@@ -88,7 +76,6 @@ def process_single_rate_file(
             time_buckets[time_key] = []
         time_buckets[time_key].append(record)
 
-    # 计算每个时间桶的统计值
     avg_txrate = []
     p99_txrate = []
     avg_ecnrate = []
@@ -103,13 +90,11 @@ def process_single_rate_file(
         avg_ecnrate.append((time_key, np.mean(ecn_rates)))
         p99_ecnrate.append((time_key, np.percentile(ecn_rates, 99)))
 
-    # 按时间排序并转换为numpy数组
     avg_txrate.sort(key=lambda x: x[0])
     p99_txrate.sort(key=lambda x: x[0])
     avg_ecnrate.sort(key=lambda x: x[0])
     p99_ecnrate.sort(key=lambda x: x[0])
     
-    # 跳过初始不稳定数据点（原代码逻辑）
     avg_txrate_arr = np.array(avg_txrate)[skip_initial_points:]
     p99_txrate_arr = np.array(p99_txrate)[skip_initial_points:]
     avg_ecnrate_arr = np.array(avg_ecnrate)[skip_initial_points:]
@@ -117,29 +102,22 @@ def process_single_rate_file(
 
     return avg_txrate_arr, p99_txrate_arr, avg_ecnrate_arr, p99_ecnrate_arr
 
-
-# ------------------------------
-# 绘图功能（多文件对比）
-# ------------------------------
 def plot_rate_comparison(
     file_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     title: str,
     output_path: str,
-    xlim: Tuple[float, float] = None  # 时间窗口聚焦
+    xlim: Tuple[float, float] = None
 ):
-    """绘制多文件的速率对比图（2个子图：平均速率 + 99分位数速率）"""
     plt.figure(figsize=(14, 10))
     color_list = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
-    line_style_tx = '-'       # TxRate用实线
-    line_style_ecn = '--'     # ECNRate用虚线
+    line_style_tx = '-'
+    line_style_ecn = '--'
 
-    # 子图1：平均速率对比（TxRate + ECNRate）
     plt.subplot(2, 1, 1)
     for idx, (filename, (avg_tx, _, avg_ecn, _)) in enumerate(file_results.items()):
         color = color_list[idx % len(color_list)]
-        file_label = os.path.splitext(filename)[0]  # 去掉文件后缀
+        file_label = os.path.splitext(filename)[0]
         
-        # 绘制平均TxRate
         plt.plot(
             avg_tx[:, 0], avg_tx[:, 1],
             color=color,
@@ -148,7 +126,6 @@ def plot_rate_comparison(
             label=f"{file_label} - Avg TxRate"
         )
         
-        # 绘制平均ECNRate
         plt.plot(
             avg_ecn[:, 0], avg_ecn[:, 1],
             color=color,
@@ -165,13 +142,11 @@ def plot_rate_comparison(
     if xlim:
         plt.xlim(*xlim)
 
-    # 子图2：99分位数速率对比（TxRate + ECNRate）
     plt.subplot(2, 1, 2)
     for idx, (filename, (_, p99_tx, _, p99_ecn)) in enumerate(file_results.items()):
         color = color_list[idx % len(color_list)]
         file_label = os.path.splitext(filename)[0]
         
-        # 绘制99分位TxRate
         plt.plot(
             p99_tx[:, 0], p99_tx[:, 1],
             color=color,
@@ -180,7 +155,6 @@ def plot_rate_comparison(
             label=f"{file_label} - P99 TxRate"
         )
         
-        # 绘制99分位ECNRate
         plt.plot(
             p99_ecn[:, 0], p99_ecn[:, 1],
             color=color,
@@ -201,7 +175,6 @@ def plot_rate_comparison(
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✅ 速率对比图保存：{output_path}")
 
-
 def plot_rate_vs_baseline(
     file_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     baseline_filename: str,
@@ -209,41 +182,33 @@ def plot_rate_vs_baseline(
     output_path: str,
     xlim: Tuple[float, float] = None
 ):
-    """绘制多文件相对于基准文件的速率差异百分比（2个子图：平均速率差 + 99分位数速率差）"""
-    # 检查基准文件是否存在
     if baseline_filename not in file_results:
         print(f"警告：基准文件 {baseline_filename} 不在分析结果中，跳过基准对比图")
         return
     
-    # 获取基准数据（平均Tx/Ecn、99分位Tx/Ecn）
     baseline_avg_tx, baseline_p99_tx, baseline_avg_ecn, baseline_p99_ecn = file_results[baseline_filename]
-    baseline_times = baseline_avg_tx[:, 0]  # 以基准时间轴为统一标准
+    baseline_times = baseline_avg_tx[:, 0]
 
     plt.figure(figsize=(14, 10))
     color_list = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
 
-    # 子图1：平均速率差异百分比
     plt.subplot(2, 1, 1)
     for idx, (filename, (avg_tx, _, avg_ecn, _)) in enumerate(file_results.items()):
         if filename == baseline_filename:
-            continue  # 跳过基准文件自身
+            continue
         
         color = color_list[idx % len(color_list)]
         file_label = os.path.splitext(filename)[0]
         
-        # 插值到基准时间轴（确保时间点对齐）
         interp_avg_tx = np.interp(baseline_times, avg_tx[:, 0], avg_tx[:, 1])
         interp_avg_ecn = np.interp(baseline_times, avg_ecn[:, 0], avg_ecn[:, 1])
         
-        # 计算差异百分比：(当前值 - 基准值) / 基准值 * 100（避免除以零）
         with np.errstate(divide='ignore', invalid='ignore'):
             tx_diff_pct = (interp_avg_tx - baseline_avg_tx[:, 1]) / baseline_avg_tx[:, 1] * 100
             ecn_diff_pct = (interp_avg_ecn - baseline_avg_ecn[:, 1]) / baseline_avg_ecn[:, 1] * 100
-            # 处理基准值为0的特殊情况
             tx_diff_pct[baseline_avg_tx[:, 1] == 0] = 0 if np.all(interp_avg_tx[baseline_avg_tx[:, 1] == 0] == 0) else 100
             ecn_diff_pct[baseline_avg_ecn[:, 1] == 0] = 0 if np.all(interp_avg_ecn[baseline_avg_ecn[:, 1] == 0] == 0) else 100
         
-        # 绘制平均TxRate差异
         plt.plot(
             baseline_times, tx_diff_pct,
             color=color,
@@ -252,7 +217,6 @@ def plot_rate_vs_baseline(
             label=f"{file_label} - Avg TxRate vs Baseline"
         )
         
-        # 绘制平均ECNRate差异
         plt.plot(
             baseline_times, ecn_diff_pct,
             color=color,
@@ -261,7 +225,7 @@ def plot_rate_vs_baseline(
             label=f"{file_label} - Avg ECNRate vs Baseline"
         )
     
-    plt.axhline(y=0, color='black', linestyle='-', alpha=0.5)  # 零差异基准线
+    plt.axhline(y=0, color='black', linestyle='-', alpha=0.5)
     plt.xlabel('Time (s)', fontsize=12)
     plt.ylabel('Difference from Baseline (%)', fontsize=12)
     plt.title(f'{title}\n(Average Rate Difference)', fontsize=13, pad=15)
@@ -270,7 +234,6 @@ def plot_rate_vs_baseline(
     if xlim:
         plt.xlim(*xlim)
 
-    # 子图2：99分位数速率差异百分比
     plt.subplot(2, 1, 2)
     for idx, (filename, (_, p99_tx, _, p99_ecn)) in enumerate(file_results.items()):
         if filename == baseline_filename:
@@ -279,18 +242,15 @@ def plot_rate_vs_baseline(
         color = color_list[idx % len(color_list)]
         file_label = os.path.splitext(filename)[0]
         
-        # 插值到基准时间轴
         interp_p99_tx = np.interp(baseline_times, p99_tx[:, 0], p99_tx[:, 1])
         interp_p99_ecn = np.interp(baseline_times, p99_ecn[:, 0], p99_ecn[:, 1])
         
-        # 计算差异百分比
         with np.errstate(divide='ignore', invalid='ignore'):
             tx_diff_pct = (interp_p99_tx - baseline_p99_tx[:, 1]) / baseline_p99_tx[:, 1] * 100
             ecn_diff_pct = (interp_p99_ecn - baseline_p99_ecn[:, 1]) / baseline_p99_ecn[:, 1] * 100
             tx_diff_pct[baseline_p99_tx[:, 1] == 0] = 0 if np.all(interp_p99_tx[baseline_p99_tx[:, 1] == 0] == 0) else 100
             ecn_diff_pct[baseline_p99_ecn[:, 1] == 0] = 0 if np.all(interp_p99_ecn[baseline_p99_ecn[:, 1] == 0] == 0) else 100
         
-        # 绘制99分位TxRate差异
         plt.plot(
             baseline_times, tx_diff_pct,
             color=color,
@@ -299,7 +259,6 @@ def plot_rate_vs_baseline(
             label=f"{file_label} - P99 TxRate vs Baseline"
         )
         
-        # 绘制99分位ECNRate差异
         plt.plot(
             baseline_times, ecn_diff_pct,
             color=color,
@@ -321,25 +280,177 @@ def plot_rate_vs_baseline(
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✅ 基准对比图保存：{output_path}")
 
+# ------------------------------
+# 修复：TxRate/ECNRate 归一化对比柱状图（PDF格式）
+# ------------------------------
+def plot_normalized_rate_bar_chart(
+    file_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    baseline_filename: str,
+    output_dir: str
+):
+    """
+    生成TxRate和ECNRate平均值的归一化对比柱状图（以copter为基准）
+    样式与参考代码保持一致，保存为PDF格式
+    """
+    # 配置全局样式（与参考代码一致）
+    plt.rcParams.update({
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman', 'Computer Modern Roman'],
+        'font.size': 12,
+        'axes.labelsize': 12,
+        'axes.titlesize': 14,
+        'legend.fontsize': 10,
+        'xtick.labelsize': 9,
+        'ytick.labelsize': 9,
+        'axes.unicode_minus': False,
+        'axes.linewidth': 1.0,
+        'grid.linestyle': '--',
+        'grid.alpha': 0.6,
+        'figure.dpi': 300,
+        'text.usetex': False,
+    })
+    sns.set_style("whitegrid")
+    sns.set_palette("colorblind")
+
+    # 样式配置（与参考代码完全一致）
+    color_map = {
+        "copter": "#FF6B00",
+        "m4": "#E60023",
+        "m3": "#0066FF",
+        "acc": "#00CC66",
+        "dcqcn": "#9933FF",
+        "hpcc": "#FFCC00"
+    }
+    hatches = {
+        "copter": '||', "m4": 'xx', "m3": '++', "acc": '\\', "dcqcn": 'x', "hpcc": '+'
+    }
+    name_mapping = {
+        "copter": "CoPTER",
+        "m3": "m3",
+        "m4": "m4",
+        "acc": "ACC",
+        "dcqcn": r"$SECN_1$",
+        "hpcc": r"$SECN_2$"
+    }
+
+    # 1. 单独提取基准文件的平均速率（确保先初始化基准值）
+    baseline_avg_tx = None
+    baseline_avg_ecn = None
+    baseline_method = baseline_filename.split('_')[0].lower()
+    
+    if baseline_filename in file_results:
+        avg_tx_arr, _, avg_ecn_arr, _ = file_results[baseline_filename]
+        baseline_avg_tx = np.mean(avg_tx_arr[:, 1])
+        baseline_avg_ecn = np.mean(avg_ecn_arr[:, 1])
+        print(f"📊 基准文件（{baseline_method}）统计：Avg TxRate={baseline_avg_tx:.4f}, Avg ECNRate={baseline_avg_ecn:.4f}")
+    else:
+        print(f"⚠️  基准文件 {baseline_filename} 未找到，无法生成柱状图")
+        return
+    
+    # 检查基准值有效性
+    if baseline_avg_tx is None or baseline_avg_ecn is None:
+        print(f"⚠️  基准值获取失败，无法生成柱状图")
+        return
+    
+    # 2. 计算所有文件的平均速率和归一化值
+    rate_data = []
+    for filename, (avg_tx_arr, _, avg_ecn_arr, _) in file_results.items():
+        method_name = filename.split('_')[0].lower()
+        if method_name not in color_map:
+            method_name = "unknown"
+            print(f"⚠️  未知方法名：{filename}，使用默认样式")
+        
+        # 计算整体平均速率
+        overall_avg_tx = np.mean(avg_tx_arr[:, 1])
+        overall_avg_ecn = np.mean(avg_ecn_arr[:, 1])
+        
+        # 计算归一化值
+        norm_tx = overall_avg_tx / baseline_avg_tx if baseline_avg_tx != 0 else 0.0
+        norm_ecn = overall_avg_ecn / baseline_avg_ecn if baseline_avg_ecn != 0 else 0.0
+        
+        # 添加数据
+        rate_data.append({
+            "Method": method_name,
+            "Rate Type": "Avg TxRate",
+            "Value": overall_avg_tx,
+            "Normalized Value": norm_tx
+        })
+        # rate_data.append({
+        #     "Method": method_name,
+        #     "Rate Type": "Avg ECNRate",
+        #     "Value": overall_avg_ecn,
+        #     "Normalized Value": norm_ecn
+        # })
+
+    # -------------------------- 修复核心：转换为DataFrame --------------------------
+    df_rate = pd.DataFrame(rate_data)  # 列表转换为DataFrame
+    
+    # 3. 绘制柱状图（PDF格式，适配论文双栏）
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    sns.barplot(
+        x="Rate Type", 
+        y="Normalized Value", 
+        hue="Method", 
+        data=df_rate,  # 传入DataFrame
+        palette=color_map,
+        ax=ax,
+        edgecolor='black'
+    )
+
+    # 应用样式（空心+边框+填充图案）
+    for i, bar in enumerate(ax.containers):
+        method_name = bar.get_label().lower()
+        # 匹配颜色和图案
+        color = color_map.get(method_name, "#999999")
+        hatch = hatches.get(method_name, '')
+        
+        for patch in bar.patches:
+            patch.set_facecolor('none')
+            patch.set_edgecolor(color)
+            patch.set_linewidth(2)
+            patch.set_hatch(hatch)
+            patch.set_alpha(1.0)
+
+    # 4. 图表美化
+    ax.axhline(y=1.0, color='gray', linestyle='--', linewidth=1.5, label='CoPTER Baseline')
+    ax.set_ylabel("Normalized Value (vs CoPTER)", fontsize=12)
+    ax.set_xlabel("")
+    ax.set_title("")
+    ax.grid(axis='y', linestyle='', alpha=0.7)
+
+    # 替换图例
+    handles, labels = ax.get_legend_handles_labels()
+    new_labels = []
+    for label in labels:
+        if label == 'CoPTER Baseline':
+            new_labels.append(label)
+        else:
+            new_labels.append(name_mapping.get(label.lower(), label))
+    ax.legend(handles=handles, labels=new_labels, title="", loc='upper left', frameon=False)
+
+    # 5. 保存PDF
+    output_path = os.path.join(output_dir, "normalized_rate_comparison.pdf")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"✅ 归一化速率对比柱状图（PDF）保存：{output_path}")
+    plt.close(fig)
 
 # ------------------------------
-# 批量分析入口
+# 批量分析入口（保持不变）
 # ------------------------------
 def batch_analyze_rate_files(
     file_dir: str,
     file_list: List[str],
     output_dir: str = "rate_analysis_results",
     skip_initial_points: int = 2,
-    start_time: float = 2.0,    # 时间窗口起始（秒）
-    window_size: float = 0.02,  # 时间窗口长度（20ms）
-    baseline_filename: str = None  # 基准文件名（可选）
+    start_time: float = 2.0,
+    window_size: float = 0.02,
+    baseline_filename: str = None
 ):
-    """批量分析多个速率监控文件，生成对比图和基准差异图"""
-    # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)
     print(f"📁 输出目录：{output_dir}")
 
-    # 1. 批量处理所有文件，收集结果
+    # 1. 批量处理所有文件
     file_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
     for filename in file_list:
         file_path = os.path.join(file_dir, filename)
@@ -350,17 +461,15 @@ def batch_analyze_rate_files(
         else:
             print(f"❌ 跳过文件：{filename}")
 
-    # 检查是否有有效数据
     if not file_results:
         print("❌ 无有效数据，程序退出")
         return
 
-    # 2. 生成【完整时间跨度对比图】
+    # 2. 生成原有对比图
     full_title = 'Port Rate Comparison (TxRate & ECNRate)'
     full_output = os.path.join(output_dir, "full_time_rate_comparison.png")
     plot_rate_comparison(file_results, full_title, full_output)
 
-    # 3. 生成【指定时间窗口对比图】
     end_time = start_time + window_size
     window_title = f'Port Rate Comparison\n({window_size*1000:.0f}ms Window: {start_time:.3f}-{end_time:.3f}s)'
     window_output = os.path.join(
@@ -369,62 +478,41 @@ def batch_analyze_rate_files(
     )
     plot_rate_comparison(file_results, window_title, window_output, xlim=(start_time, end_time))
 
-    # 4. 若指定基准文件，生成【基准对比图】（完整时间 + 窗口时间）
+    # 3. 生成基准对比图和柱状图
     if baseline_filename and baseline_filename in file_results:
-        # 基准对比图（完整时间）
         baseline_full_title = f'Rate Comparison Against Baseline\n({os.path.splitext(baseline_filename)[0]})'
         baseline_full_output = os.path.join(output_dir, "baseline_comparison_full_time.png")
         plot_rate_vs_baseline(file_results, baseline_filename, baseline_full_title, baseline_full_output)
 
-        # 基准对比图（指定时间窗口）
         baseline_window_title = f'Rate Comparison Against Baseline\n({os.path.splitext(baseline_filename)[0]} - {window_size*1000:.0f}ms Window)'
         baseline_window_output = os.path.join(
             output_dir,
             f"baseline_comparison_window_{start_time:.3f}_{end_time:.3f}.png"
         )
         plot_rate_vs_baseline(file_results, baseline_filename, baseline_window_title, baseline_window_output, xlim=(start_time, end_time))
+        
+        # 生成归一化对比柱状图（PDF）
+        plot_normalized_rate_bar_chart(file_results, baseline_filename, output_dir)
     elif baseline_filename:
-        print(f"⚠️  基准文件 {baseline_filename} 未在有效文件列表中，跳过基准对比图")
-
+        print(f"⚠️  基准文件 {baseline_filename} 未在有效文件列表中，跳过基准对比图和柱状图")
 
 # ------------------------------
-# 主函数（配置与启动，直接内置文件参数）
+# 主函数（保持不变）
 # ------------------------------
 if __name__ == "__main__":
-    # --------------------------
-    # 配置参数：直接在这里修改，无需命令行输入
-    # --------------------------
-    # 1. 文件路径配置（必须根据实际环境修改！）
-    FILE_DIR = "/home/ame/copter/simulation/output"  # 速率文件所在目录
-    FILE_LIST = [                                   # 待分析的文件名列表
-        "acc_webserver_t0.05_l0.7.txrate",
-        "copter_webserver_t0.05_l0.7_m3.txrate",
-        "copter_webserver_t0.05_l0.7_like_acc.txrate",
-        "copter_webserver_t0.05_l0.7_co.txrate"       # 示例：可作为基准文件
+    # 配置参数
+    FILE_DIR = "/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load"
+    FILE_LIST = [
+        "acc_thesis_cachefollower_0.05t_0.9load.txrate",
+        "copter_thesis_cachefollower_0.05t_0.9load.txrate",
+        "m3_thesis_cachefollower_0.05t_0.9load.txrate",
+        "m4_thesis_cachefollower_0.05t_0.9load.txrate"
     ]
-    
-    # 2. 输出配置
-    OUTPUT_DIR = "rate_analysis_results"  # 结果输出目录（自动创建）
-    
-    # 3. 数据处理配置
-    SKIP_INITIAL_POINTS = 2               # 跳过初始不稳定数据点数量
-    START_TIME = 2.00                     # 时间窗口起始时间（秒）
-    WINDOW_SIZE = 0.01                    # 时间窗口长度（秒，0.02即20ms）
-    
-    # 4. 基准对比配置（可选，需在FILE_LIST中存在）
-    BASELINE_FILENAME = "copter_webserver_t0.05_l0.7_co.txrate"
-
-    # # 打印配置信息
-    # print("="*50)
-    # print("📊 端口速率批量分析配置")
-    # print("="*50)
-    # print(f"文件目录：{FILE_DIR}")
-    # print(f"待分析文件：{FILE_LIST}")
-    # print(f"输出目录：{OUTPUT_DIR}")
-    # print(f"跳过初始点：{SKIP_INITIAL_POINTS}个")
-    # print(f"聚焦窗口：{START_TIME:.3f}s - {START_TIME+WINDOW_SIZE:.3f}s（{WINDOW_SIZE*1000:.0f}ms）")
-    # print(f"基准文件：{BASELINE_FILENAME if BASELINE_FILENAME else '未指定'}")
-    # print("="*50)
+    OUTPUT_DIR = "rate_analysis_results/thesis_cachefollower_0.05t_0.9load"
+    SKIP_INITIAL_POINTS = 2
+    START_TIME = 2.00
+    WINDOW_SIZE = 0.01
+    BASELINE_FILENAME = "copter_thesis_cachefollower_0.05t_0.9load.txrate"
 
     # 执行批量分析
     batch_analyze_rate_files(
