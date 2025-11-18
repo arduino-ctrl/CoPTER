@@ -1,3 +1,4 @@
+!**/
 .vscode
 
 
@@ -7,7 +8,7 @@ simulation/mix
 
 
 __pycache__
-__*
+# __*
 
 *.log
 *.pt
@@ -29,4 +30,7 @@ TODO
 *.npy
 *.pth
 
-test/*
+tools/analysis/**/*
+!tools/analysis/**/*.py
+
+!.gitignore
