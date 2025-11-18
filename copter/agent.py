@@ -320,7 +320,7 @@ class CoPTER(Agent):
             # fusion = q_norm*f_norm
             # fusion = f_norm
             # fusion = 0 * q_norm + 1 * f_norm  # 简单加权融合
-            fusion = 0.1 * q_norm + 0.9 * f_norm  
+            fusion = 0.8 * q_norm + 0.2 * f_norm  
             fusion_index = np.unravel_index(np.argmax(fusion), fusion.shape)
             fusion_kmin_value = base_kmin[fusion_index[0]]
             fusion_kmax_value = base_kmax[fusion_index[1]]
