@@ -247,15 +247,15 @@ if __name__ == "__main__":
     # file = "/home/ame/copter/simulation/output/GoogleRPCHPCC_SECN_load0.9.fct"
     
     # file_dir = "/home/ame/copter/simulation/output/"
-    file_dir = "/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load"
+    file_dir = "/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_cachefollower_random"
     file_list = [
         # "WebServerDCQCN_SECN_load0.7.fct"
-        "acc_thesis_cachefollower_0.05t_0.9load.fct",
-        "copter_thesis_cachefollower_0.05t_0.9load.fct",
-        "m3_thesis_cachefollower_0.05t_0.9load.fct",
-        "dcqcn_thesis_cachefollower_0.05t_0.9load.fct",
-        "hpcc_thesis_cachefollower_0.05t_0.9load.fct",
-        "m4_thesis_cachefollower_0.05t_0.9load.fct"
+        "acc_thesis_mix_webserver_websearch_cachefollower_random.fct",
+        "copter_thesis_mix_webserver_websearch_cachefollower_random.fct",
+        "m3_thesis_mix_webserver_websearch_cachefollower_random.fct",
+        "dcqcn_thesis_mix_webserver_websearch_cachefollower_random.fct",
+        "hpcc_thesis_mix_webserver_websearch_cachefollower_random.fct",
+        # "m4_thesis_mix_webserver_websearch_cachefollower_random.fct"
         # "m3_mix_webserver_websearch_hadoop_clusters.fct"
         # "copter_webserver_t0.05_l0.7 copy.fct"
         # "_dcqcn_06load_hadoop_5paramStep.fct"
@@ -296,7 +296,7 @@ if __name__ == "__main__":
     #     "HadoopDCQCN_SECN_load0.9.fct",
     # ]
 
-    output_path = "thesis_cachefollower_0.05t_0.9load"
+    output_path = "thesis_mix_webserver_websearch_cachefollower_random"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     

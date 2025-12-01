@@ -501,18 +501,20 @@ def batch_analyze_rate_files(
 # ------------------------------
 if __name__ == "__main__":
     # 配置参数
-    FILE_DIR = "/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load"
+    FILE_DIR = "/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_cachefollower_random"
     FILE_LIST = [
-        "acc_thesis_cachefollower_0.05t_0.9load.txrate",
-        "copter_thesis_cachefollower_0.05t_0.9load.txrate",
-        "m3_thesis_cachefollower_0.05t_0.9load.txrate",
-        "m4_thesis_cachefollower_0.05t_0.9load.txrate"
+        "acc_thesis_mix_webserver_websearch_cachefollower_random.txrate",
+        "copter_thesis_mix_webserver_websearch_cachefollower_random.txrate",
+        "m3_thesis_mix_webserver_websearch_cachefollower_random.txrate",
+        # "m4_thesis_mix_webserver_websearch_cachefollower_random.txrate"
+        "dcqcn_thesis_mix_webserver_websearch_cachefollower_random.txrate",
+        "hpcc_thesis_mix_webserver_websearch_cachefollower_random.txrate",
     ]
-    OUTPUT_DIR = "rate_analysis_results/thesis_cachefollower_0.05t_0.9load"
+    OUTPUT_DIR = "rate_analysis_results/thesis_mix_webserver_websearch_cachefollower_random"
     SKIP_INITIAL_POINTS = 2
     START_TIME = 2.00
     WINDOW_SIZE = 0.01
-    BASELINE_FILENAME = "copter_thesis_cachefollower_0.05t_0.9load.txrate"
+    BASELINE_FILENAME = "copter_thesis_mix_webserver_websearch_cachefollower_random.txrate"
 
     # 执行批量分析
     batch_analyze_rate_files(

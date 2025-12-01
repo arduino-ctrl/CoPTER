@@ -6,16 +6,16 @@ from datetime import datetime
 
 # Data file paths
 file_paths = {
-    'acc': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/acc_thesis_cachefollower_0.05t_0.9load.throughput',
-    'copter': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/copter_thesis_cachefollower_0.05t_0.9load.throughput',
-    'm3': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/m3_thesis_cachefollower_0.05t_0.9load.throughput',
-    'm4': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/m4_thesis_cachefollower_0.05t_0.9load.throughput',
-    # 'dcqcn': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/dcqcn_thesis_cachefollower_0.05t_0.9load.throughput',
-    # 'hpcc': '/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load/hpcc_thesis_cachefollower_0.05t_0.9load.throughput'
+    'acc': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/acc_thesis_mix_webserver_websearch_random.throughput',
+    'copter': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/copter_thesis_mix_webserver_websearch_random.throughput',
+    'm3': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/m3_thesis_mix_webserver_websearch_random.throughput',
+    'm4': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/m4_thesis_mix_webserver_websearch_random.throughput',
+    'dcqcn': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/dcqcn_thesis_mix_webserver_websearch_random.throughput',
+    'hpcc': '/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_random/hpcc_thesis_mix_webserver_websearch_random.throughput'
 }
 
 # Output directory - updated to match the path from your error message
-output_dir = '/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/throughput_analysis'
+output_dir = '/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/throughput_analysis'
 os.makedirs(output_dir, exist_ok=True)
 
 def load_throughput_data(file_path):

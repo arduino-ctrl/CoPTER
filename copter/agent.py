@@ -319,8 +319,8 @@ class CoPTER(Agent):
             # f_norm = np.ones_like(f_norm)  # 将 f_norm 设置为全 1 矩阵
             # fusion = q_norm*f_norm
             # fusion = f_norm
-            # fusion = 0 * q_norm + 1 * f_norm  # 简单加权融合
-            fusion = 0.8 * q_norm + 0.2 * f_norm  
+            fusion = 0 * q_norm + 1 * f_norm  # 简单加权融合
+            # fusion = 0.8 * q_norm + 0.2 * f_norm  
             fusion_index = np.unravel_index(np.argmax(fusion), fusion.shape)
             fusion_kmin_value = base_kmin[fusion_index[0]]
             fusion_kmax_value = base_kmax[fusion_index[1]]

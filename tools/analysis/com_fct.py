@@ -36,7 +36,7 @@ sns.set_style("white")
 sns.set_palette("colorblind")
 
 # -------------------------- 文件夹配置（保持不变） --------------------------
-custom_folder_name = "thesis_cachefollower_0.05t_0.9load"
+custom_folder_name = "thesis_mix_webserver_websearch_random"
 main_output_dir = Path("/home/ame/copter/tools/analysis/fct_analysis_plots")
 output_dir = main_output_dir / custom_folder_name
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,12 +44,12 @@ print(f"图表将保存到: {output_dir}")
 
 # -------------------------- 数据路径配置（保持不变，键名仍为原名称以匹配文件） --------------------------
 file_paths = {
-    "copter": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/copter_thesis_cachefollower_0.05t_0.9load.fct",
-    "m3": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/m4_thesis_cachefollower_0.05t_0.9load.fct",
-    # "m4": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/m4_thesis_cachefollower_0.05t_0.9load.fct",
-    "acc": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/acc_thesis_cachefollower_0.05t_0.9load.fct",
-    "dcqcn": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/dcqcn_thesis_cachefollower_0.05t_0.9load.fct",
-    "hpcc": "/home/ame/copter/tools/analysis/thesis_cachefollower_0.05t_0.9load/hpcc_thesis_cachefollower_0.05t_0.9load.fct"
+    "copter": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/copter_thesis_mix_webserver_websearch_random.fct",
+    "m3": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/m4_thesis_mix_webserver_websearch_random.fct",
+    # "m4": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/m4_thesis_mix_webserver_websearch_random.fct",
+    "acc": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/acc_thesis_mix_webserver_websearch_random.fct",
+    "dcqcn": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/dcqcn_thesis_mix_webserver_websearch_random.fct",
+    "hpcc": "/home/ame/copter/tools/analysis/thesis_mix_webserver_websearch_random/hpcc_thesis_mix_webserver_websearch_random.fct"
 }
 
 # -------------------------- 名称映射（原名称→带下标显示名称，语法不变） --------------------------
@@ -245,11 +245,11 @@ def plot_overall_comparison(results):
     plt.close(fig_png)
     
     # 优化PDF：仅95th/99th指标（原有）
-    # metrics_pdf = ["Avg","95th", "99th"]
-    metrics_pdf = ["95th", "99th"]
+    metrics_pdf = ["Avg","95th", "99th"]
+    # metrics_pdf = ["95th", "99th"]
     data_pdf = df_png[df_png["Metric"].isin(metrics_pdf)].copy()
-    # data_pdf["Metric"] = data_pdf["Metric"].replace({"Avg":"Avg","95th": "p95", "99th": "p99"})
-    data_pdf["Metric"] = data_pdf["Metric"].replace({"95th": "p95", "99th": "p99"})
+    data_pdf["Metric"] = data_pdf["Metric"].replace({"Avg":"Avg","95th": "p95", "99th": "p99"})
+    # data_pdf["Metric"] = data_pdf["Metric"].replace({"95th": "p95", "99th": "p99"})
     
     fig_pdf, ax_pdf = plt.subplots(1, 1, figsize=(18, 12))
     sns.barplot(x="Metric", y="Value", hue="Scheme", data=data_pdf, 
@@ -312,7 +312,7 @@ def plot_overall_comparison(results):
             )
     
     # 创建归一化PDF图表
-    fig_relative_pdf, ax_relative_pdf = plt.subplots(1, 1, figsize=(10, 8))
+    fig_relative_pdf, ax_relative_pdf = plt.subplots(1, 1, figsize=(18,12))
     sns.barplot(x="Metric", y="Value", hue="Scheme", data=data_relative_pdf,
                 palette=color_map, ax=ax_relative_pdf, edgecolor='black')
     
@@ -335,12 +335,15 @@ def plot_overall_comparison(results):
     legend_relative = ax_relative_pdf.legend(
         handles=handles, labels=new_labels,
         title="",  # 无图例标题（与优化PDF一致）
-        title_fontsize=20,  # 按尺寸比例适配（优化PDF是60）
-        loc='upper left',  # 位置一致
+        title_fontsize=60,  # 按尺寸比例适配（优化PDF是60）
+        loc='upper center',  # 位置一致
         frameon=False,  # 无边框（与优化PDF一致）
-        bbox_to_anchor=(0.01, 1),  # 图例上移（与优化PDF一致）
+        bbox_to_anchor=(0.5, 1.05),   # ✔ 图例放到图顶部
+        ncol=3,         # ✔ 图例一行排列
+        columnspacing=0.5,            # ✔ 调整列间距
+        # bbox_to_anchor=(0.01, 1),  # 图例上移（与优化PDF一致）
         labelspacing=0.8,  # 图例项间距（与优化PDF一致）
-        fontsize=20  # 图例字体大小（按尺寸比例适配）
+        fontsize=50  # 图例字体大小（按尺寸比例适配）
     )
     # 图例字体：Times New Roman（包括数学文本）
     for text in legend_relative.get_texts():
@@ -348,15 +351,15 @@ def plot_overall_comparison(results):
         text.set_math_fontfamily('custom')  # 保障SECN₁/SECN₂字体一致
     # 保持相同的轴标签和样式
     ax_relative_pdf.set_title("")
-    ax_relative_pdf.set_ylabel("Normalized FCT", fontsize=20,fontname='Times New Roman')
+    ax_relative_pdf.set_ylabel("Normalized FCT", fontsize=60,fontname='Times New Roman')
     ax_relative_pdf.set_xlabel("", fontname='Times New Roman')
         # 轴刻度字体：Times New Roman（与优化PDF一致）
     for label in ax_relative_pdf.get_xticklabels():
         label.set_fontname('Times New Roman')
-        label.set_fontsize(20)  # 按尺寸比例适配
+        label.set_fontsize(60)  # 按尺寸比例适配
     for label in ax_relative_pdf.get_yticklabels():
         label.set_fontname('Times New Roman')
-        label.set_fontsize(20)  # 按尺寸比例适配
+        label.set_fontsize(60)  # 按尺寸比例适配
     
     # 坐标轴线条：与优化PDF完全一致（黑色+粗细2.0）
     ax_relative_pdf.spines['top'].set_linewidth(2.0)

@@ -425,20 +425,20 @@ def batch_analyze_queue_files(
 
 if __name__ == "__main__":
     # -------------------------- 配置参数（用户可根据需求修改） --------------------------
-    QUEUE_FILE_DIR = "/home/ame/copter/simulation/output/thesis_cachefollower_0.05t_0.9load"
+    QUEUE_FILE_DIR = "/home/ame/copter/simulation/output/thesis_mix_webserver_websearch_cachefollower_random"
     QUEUE_FILE_LIST = [
-        "acc_thesis_cachefollower_0.05t_0.9load.queue",
-        "copter_thesis_cachefollower_0.05t_0.9load.queue",
-        # "m3_thesis_cachefollower_0.05t_0.9load.queue",
-        "m4_thesis_cachefollower_0.05t_0.9load.queue",
-        # "dcqcn_thesis_cachefollower_0.05t_0.9load.queue",
-        # "hpcc_thesis_cachefollower_0.05t_0.9load.queue"
+        "acc_thesis_mix_webserver_websearch_cachefollower_random.queue",
+        "copter_thesis_mix_webserver_websearch_cachefollower_random.queue",
+        "m3_thesis_mix_webserver_websearch_cachefollower_random.queue",
+        # "m4_thesis_mix_webserver_websearch_cachefollower_random.queue",
+        "dcqcn_thesis_mix_webserver_websearch_cachefollower_random.queue",
+        "hpcc_thesis_mix_webserver_websearch_cachefollower_random.queue"
     ]
     MAIN_OUTPUT_DIR = "queue_analysis_results"
-    CUSTOM_SUBFOLDER = "thesis_cachefollower_0.05t_0.9load"
+    CUSTOM_SUBFOLDER = "thesis_mix_webserver_websearch_cachefollower_random"
     START_TIME = 2.03
     WINDOW_SIZE = 0.02
-    BASELINE_FILENAME = "copter_thesis_cachefollower_0.05t_0.9load.queue"
+    BASELINE_FILENAME = "copter_thesis_mix_webserver_websearch_cachefollower_random.queue"
     # --------------------------------------------------------------------------------
 
     batch_analyze_queue_files(
